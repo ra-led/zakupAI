@@ -139,3 +139,34 @@ class SupplierSearchRequest(BaseModel):
 class SupplierSearchResponse(BaseModel):
     queries: List[str]
     note: str
+
+
+class ProcessedContact(BaseModel):
+    website: str
+    is_relevant: bool = True
+    reason: Optional[str] = None
+    name: Optional[str] = None
+
+
+class SearchOutputEntry(BaseModel):
+    website: str
+    emails: List[str] = []
+
+
+class SupplierImportRequest(BaseModel):
+    processed_contacts: Optional[List[ProcessedContact]] = None
+    search_output: Optional[List[SearchOutputEntry]] = None
+    processed_contacts_path: Optional[str] = Field(
+        default="processed_contacts.json",
+        description="Path to suppliers_contacts.py processed_contacts output",
+    )
+    search_output_path: Optional[str] = Field(
+        default="search_output.json",
+        description="Path to suppliers_contacts.py search_output output",
+    )
+
+
+class SupplierImportResult(BaseModel):
+    suppliers_created: int
+    suppliers_matched: int
+    contacts_created: int

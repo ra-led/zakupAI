@@ -1,17 +1,17 @@
 # zakupAI
 
-Простейший сервис по описанию из `DESIGN.md`: FastAPI backend + React/Vite фронтенд. Закрывает базовые сценарии MVP: управление закупками, списками поставщиков и контактами, заготовки для LLM-задач, работа с шаблонами писем и учёт ящиков пользователя.
+Простейший сервис по описанию из `AGENTS.md`: FastAPI backend + React/Vite фронтенд. Закрывает базовые сценарии MVP: управление закупками, списками поставщиков и контактами, заготовки для LLM-задач, работа с шаблонами писем и учёт ящиков пользователя.
 
 ## Быстрый старт через docker-compose
 1. Скопируйте переменные окружения и при необходимости отредактируйте:
    ```bash
    cp .env.example .env
    ```
-2. Поднимите стек (PostgreSQL + backend + фронтенд):
+2. Поднимите стек (PostgreSQL + backend + фронтенд + nginx-прокси):
    ```bash
    docker-compose up --build
    ```
-3. Фронтенд доступен на http://localhost:4173, backend — на http://localhost:8000 (Swagger: `/docs`).
+3. Через nginx фронтенд доступен на http://localhost, API — на http://localhost/api (Swagger: `/api/docs`). Для отладки можно ходить напрямую на backend http://localhost:8000.
 
 ## Локальный запуск backend (без Docker)
 1. Установите зависимости
@@ -49,6 +49,17 @@
 - Хранение почтовых настроек пользователя и истории исходящих/входящих писем.
 - Создание заготовок LLM-задач и генерация поисковых запросов по ТЗ без обращения к внешним API.
 - Автогенерация черновика письма-запроса КП на основе закупки и выбранного поставщика.
+
+### Импорт email-контактов из `suppliers_contacts.py`
+1. Выполните внешнюю утилиту `suppliers_contacts.py` (в неё уже встроены примеры LLM-вызовов и парсинга). Она сохранит `processed_contacts.json` и `search_output.json` рядом с проектом.
+2. Импортируйте результат в закупку через API (можно указывать пути к json или передавать сами массивы):
+   ```bash
+   curl -X POST http://localhost:8000/purchases/1/suppliers/import-script-output \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"processed_contacts_path":"processed_contacts.json","search_output_path":"search_output.json"}'
+   ```
+   Сервис объединит контакты и emails из выводов `suppliers_contacts.py`, создаст поставщиков/контакты и вернёт количество добавленных записей.
 
 ## Быстрый сценарий через cURL
 ```bash

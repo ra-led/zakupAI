@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from typing import List
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,12 +34,15 @@ from .schemas import (
     SupplierContactRead,
     SupplierCreate,
     SupplierRead,
+    SupplierImportRequest,
+    SupplierImportResult,
     SupplierSearchRequest,
     SupplierSearchResponse,
     TokenResponse,
     UserCreate,
     UserRead,
 )
+from .supplier_import import load_contacts_from_files, merge_contacts
 
 app = FastAPI(title="zakupAI service", version="0.1.0")
 
@@ -329,6 +333,106 @@ def search_suppliers(
 
     plan = build_search_queries(payload.terms_text or purchase.terms_text or "", payload.hints)
     return SupplierSearchResponse(queries=plan.queries, note=plan.note)
+
+
+@app.post(
+    "/purchases/{purchase_id}/suppliers/import-script-output",
+    response_model=SupplierImportResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def import_suppliers_from_script(
+    purchase_id: int,
+    payload: SupplierImportRequest,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> SupplierImportResult:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    processed_contacts = payload.processed_contacts or []
+    search_output = payload.search_output or []
+    if not processed_contacts or not search_output:
+        merged_contacts = load_contacts_from_files(payload.processed_contacts_path, payload.search_output_path)
+    else:
+        merged_contacts = merge_contacts(processed_contacts, search_output)
+
+    if not merged_contacts:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No suppliers_contacts.py data available to import.",
+        )
+
+    suppliers_created = 0
+    suppliers_matched = 0
+    contacts_created = 0
+
+    for item in merged_contacts:
+        if not item.get("is_relevant", True):
+            continue
+
+        website = item.get("website")
+        if not website:
+            continue
+
+        supplier = session.exec(
+            select(Supplier).where(
+                Supplier.purchase_id == purchase_id,
+                Supplier.website_url == website,
+            )
+        ).first()
+
+        company_name = item.get("name")
+        if not company_name:
+            parsed = urlparse(website)
+            company_name = parsed.hostname or website
+
+        relevance_score = 1.0 if item.get("is_relevant", True) else 0.0
+
+        if supplier:
+            suppliers_matched += 1
+            if not supplier.company_name and company_name:
+                supplier.company_name = company_name
+            if supplier.relevance_score is None:
+                supplier.relevance_score = relevance_score
+        else:
+            supplier = Supplier(
+                purchase_id=purchase_id,
+                company_name=company_name,
+                website_url=website,
+                relevance_score=relevance_score,
+            )
+            session.add(supplier)
+            session.commit()
+            session.refresh(supplier)
+            suppliers_created += 1
+
+        for email in item.get("emails", []):
+            existing_contact = session.exec(
+                select(SupplierContact).where(
+                    SupplierContact.supplier_id == supplier.id,
+                    SupplierContact.email == email,
+                )
+            ).first()
+            if existing_contact:
+                continue
+
+            contact = SupplierContact(
+                supplier_id=supplier.id,
+                email=email,
+                source_url=website,
+            )
+            session.add(contact)
+            contacts_created += 1
+
+        session.add(supplier)
+        session.commit()
+
+    return SupplierImportResult(
+        suppliers_created=suppliers_created,
+        suppliers_matched=suppliers_matched,
+        contacts_created=contacts_created,
+    )
 
 
 @app.post("/purchases/{purchase_id}/email-draft", response_model=EmailDraftResponse)

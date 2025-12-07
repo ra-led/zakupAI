@@ -25,22 +25,27 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
-from selenium import webdriver
-import helium
 from helium import Link
 
-chrome_options = webdriver.ChromeOptions()
-chrome_options.add_argument("--force-device-scale-factor=1")
-chrome_options.add_argument("--window-size=1350,1000")
-chrome_options.add_argument("--disable-pdf-viewer")
-chrome_options.add_argument("--window-position=0,0")
 
-# chrome_options.add_argument("--no-sandbox")
-# chrome_options.add_argument("--disable-dev-shm-usage")
+driver = None
 
-# Initialize the browser
-driver = helium.start_chrome(headless=True, options=chrome_options)
-driver.set_page_load_timeout(int(os.environ["PAGE_LOAD_TIMEOUT"]))
+
+def get_driver():
+    global driver
+    if driver is None:
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument("--force-device-scale-factor=1")
+        chrome_options.add_argument("--window-size=1350,1000")
+        chrome_options.add_argument("--disable-pdf-viewer")
+        chrome_options.add_argument("--window-position=0,0")
+
+        # chrome_options.add_argument("--no-sandbox")
+        # chrome_options.add_argument("--disable-dev-shm-usage")
+
+        driver = helium.start_chrome(headless=True, options=chrome_options)
+        driver.set_page_load_timeout(int(os.environ.get("PAGE_LOAD_TIMEOUT", "60")))
+    return driver
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=os.environ.get("OPENAI_BASE_URL"))
 
@@ -412,7 +417,8 @@ def fuzzy_matched(query: str, candidate: str, min_ratio: float = 0.6) -> bool:
 
 # Set up screenshot callback
 def get_screenshot() -> None:
-    png_bytes = driver.get_screenshot_as_png()
+    drv = get_driver()
+    png_bytes = drv.get_screenshot_as_png()
     image = Image.open(BytesIO(png_bytes))
     return image
 
@@ -424,19 +430,20 @@ def search_item_ctrl_f(text: str, nth_result: int = 1) -> str:
         text: The text to search for
         nth_result: Which occurrence to jump to (default: 1)
     """
-    elements = driver.find_elements(By.XPATH, f"//*[contains(text(), '{text}')]")
+    drv = get_driver()
+    elements = drv.find_elements(By.XPATH, f"//*[contains(text(), '{text}')]")
     if nth_result > len(elements):
         raise Exception(f"Match n°{nth_result} not found (only {len(elements)} matches found)")
     result = f"Found {len(elements)} matches for '{text}'."
     elem = elements[nth_result - 1]
-    driver.execute_script("arguments[0].scrollIntoView(true);", elem)
+    drv.execute_script("arguments[0].scrollIntoView(true);", elem)
     result += f"Focused on element {nth_result} of {len(elements)}"
     return result
 
 
 def go_back() -> None:
     """Goes back to previous page."""
-    driver.back()
+    get_driver().back()
 
 
 def close_popups() -> str:
@@ -444,7 +451,7 @@ def close_popups() -> str:
     Closes any visible modal or pop-up on the page. Use this to dismiss pop-up windows!
     This does not work on cookie consent banners.
     """
-    webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+    webdriver.ActionChains(get_driver()).send_keys(Keys.ESCAPE).perform()
 
 
 def visit_website(url: str) -> str:
@@ -455,6 +462,7 @@ def visit_website(url: str) -> str:
     Returns:
         Confirmation string.
     """
+    get_driver()
     helium.go_to(url)
     return f"Opened {url}"
 
@@ -505,25 +513,36 @@ def scroll_page(direction: str = "down", num_pixels: int = 1200) -> str:
     return f"Scrolled {direction} {num_pixels}px"
 
 
+def extract_emails_from_html(html: str) -> List[str]:
+    """
+    Extract email addresses from provided HTML content.
+
+    Args:
+        html: Raw HTML string.
+
+    Returns:
+        List of unique email addresses preserving order.
+    """
+    html = html or ""
+    pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+    emails = re.findall(pattern, html)
+    seen = set()
+    result: List[str] = []
+    for email in emails:
+        if email not in seen:
+            seen.add(email)
+            result.append(email)
+    return result
+
+
 def get_emails() -> List[str]:
     """
     Extract email addresses from current page HTML.
     Returns:
         List of unique emails.
     """
-    html = driver.page_source or ""
-    # Simple RFC-like email regex
-    pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
-    emails = re.findall(pattern, html)
-    # Deduplicate while preserving order
-    seen = set()
-    result: List[str] = []
-    for e in emails:
-        if e not in seen:
-            seen.add(e)
-            result.append(e)
-
-    return result
+    html = get_driver().page_source or ""
+    return extract_emails_from_html(html)
 
 
 def open_about_section() -> bool:
@@ -874,26 +893,27 @@ for contact in tqdm(search_output):
 
     try:
         visit_website(website)
+        drv = get_driver()
         main_page_1 = get_screenshot()
         scroll_page(1000)
         main_page_2 = get_screenshot()
-        main_page_content = html2text.html2text(html = driver.page_source or "")
+        main_page_content = html2text.html2text(html=drv.page_source or "")
         main_page_content = main_page_content[:10000]
-        
+
         about_success = open_about_section()
         if about_success:
             about_page_1 = get_screenshot()
             scroll_page(1000)
             about_page_2 = get_screenshot()
-            about_page_content = html2text.html2text(html = driver.page_source or "")
+            about_page_content = html2text.html2text(html=drv.page_source or "")
             about_page_content = about_page_content[:10000]
-    
+
         catalog_success = open_catalog()
         if catalog_success:
             catalog_page_1 = get_screenshot()
             scroll_page(1000)
             catalog_page_2 = get_screenshot()
-            catalog_page_content = html2text.html2text(html = driver.page_source or "")
+            catalog_page_content = html2text.html2text(html=drv.page_source or "")
             catalog_page_content = catalog_page_content[:10000]
             
     except Exception as e:
@@ -926,7 +946,8 @@ for contact in tqdm(search_output):
     seen.add(website)
     processed_contacts.append(updated_contact)
 
-driver.close()
+if driver is not None:
+    driver.close()
 
 # Store results
 with open('processed_contacts.json', 'w') as f:

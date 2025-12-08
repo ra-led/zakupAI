@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' ? `${window.location.origin}/api` : 'http://localhost:8000');
 
 async function apiFetch(path, { token, method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' };

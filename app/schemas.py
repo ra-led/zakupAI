@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -98,7 +98,7 @@ class EmailMessageCreate(BaseModel):
     body: str
     price_value: Optional[float] = None
     currency: Optional[str] = None
-    direction: str = Field(regex="^(outgoing|incoming)$")
+    direction: Literal["outgoing", "incoming"]
 
 
 class EmailMessageRead(BaseModel):

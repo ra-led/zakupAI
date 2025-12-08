@@ -43,6 +43,7 @@ from .schemas import (
     UserRead,
 )
 from .supplier_import import load_contacts_from_files, merge_contacts
+from .task_queue import get_supplier_search_state, task_queue
 
 app = FastAPI(title="zakupAI service", version="0.1.0")
 
@@ -60,6 +61,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     create_db_and_tables()
+    task_queue.start()
 
 
 @app.get("/health")
@@ -115,6 +117,7 @@ def create_purchase(payload: PurchaseCreate, session=Depends(get_session), curre
     session.add(purchase)
     session.commit()
     session.refresh(purchase)
+    task_queue.enqueue_supplier_search_task(purchase.id, purchase.terms_text or "")
     return purchase
 
 
@@ -142,6 +145,7 @@ def update_purchase(
     if not purchase or purchase.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
 
+    original_terms = purchase.terms_text
     if payload.custom_name is not None:
         purchase.custom_name = payload.custom_name
         purchase.full_name = f"Закупка №{purchase.auto_number}" + (f" — {payload.custom_name}" if payload.custom_name else "")
@@ -158,6 +162,9 @@ def update_purchase(
     session.add(purchase)
     session.commit()
     session.refresh(purchase)
+
+    if payload.terms_text is not None and payload.terms_text != original_terms:
+        task_queue.enqueue_supplier_search_task(purchase.id, purchase.terms_text or "")
     return purchase
 
 
@@ -331,8 +338,38 @@ def search_suppliers(
     if not purchase or purchase.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
 
-    plan = build_search_queries(payload.terms_text or purchase.terms_text or "", payload.hints)
-    return SupplierSearchResponse(queries=plan.queries, note=plan.note)
+    state = get_supplier_search_state(purchase_id)
+    if not state:
+        task = task_queue.enqueue_supplier_search_task(
+            purchase_id,
+            payload.terms_text or purchase.terms_text or "",
+            payload.hints,
+        )
+        return SupplierSearchResponse(
+            task_id=task.id or 0,
+            status=task.status,
+            queries=[],
+            note="Поиск поставщиков поставлен в очередь",
+            tech_task_excerpt="",
+        )
+
+    if state.status == "completed" and not state.queries:
+        plan = build_search_queries(payload.terms_text or purchase.terms_text or "", payload.hints)
+        return SupplierSearchResponse(
+            task_id=state.task_id,
+            status=state.status,
+            queries=plan.queries,
+            note=plan.note,
+            tech_task_excerpt=state.tech_task_excerpt,
+        )
+
+    return SupplierSearchResponse(
+        task_id=state.task_id,
+        status=state.status,
+        queries=state.queries,
+        note=state.note or "Поиск поставщиков выполняется",
+        tech_task_excerpt=state.tech_task_excerpt,
+    )
 
 
 @app.post(

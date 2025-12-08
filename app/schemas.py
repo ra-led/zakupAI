@@ -132,13 +132,16 @@ class EmailDraftResponse(BaseModel):
 
 
 class SupplierSearchRequest(BaseModel):
-    terms_text: str
+    terms_text: Optional[str] = None
     hints: Optional[List[str]] = None
 
 
 class SupplierSearchResponse(BaseModel):
+    task_id: int
+    status: str
     queries: List[str]
     note: str
+    tech_task_excerpt: Optional[str] = None
 
 
 class ProcessedContact(BaseModel):

@@ -158,6 +158,29 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  useEffect(() => {
+    if (!token || !selectedId) {
+      setLlmQueries(null);
+      return;
+    }
+
+    const preloadSearchState = async () => {
+      try {
+        const selectedPurchase = purchases.find((p) => p.id === selectedId);
+        const state = await apiWithToken(`/purchases/${selectedId}/suppliers/search`, {
+          method: 'POST',
+          body: { terms_text: selectedPurchase?.terms_text || '', hints: [] },
+        });
+        setLlmQueries(state);
+      } catch (err) {
+        console.error('Не удалось загрузить состояние поиска', err);
+      }
+    };
+
+    preloadSearchState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, selectedId, purchases]);
+
   const apiWithToken = (path, options) => apiFetch(path, { ...options, token });
 
   const loadPurchases = async () => {
@@ -286,9 +309,13 @@ function App() {
     setBusy(true);
     setError('');
     try {
+      const selectedPurchase = purchases.find((p) => p.id === selectedId);
       const result = await apiWithToken(`/purchases/${selectedId}/suppliers/search`, {
         method: 'POST',
-        body: { hints: searchHints.split(/[,\n]/).map((v) => v.trim()).filter(Boolean) },
+        body: {
+          terms_text: selectedPurchase?.terms_text || '',
+          hints: searchHints.split(/[\,\n]/).map((v) => v.trim()).filter(Boolean),
+        },
       });
       setLlmQueries(result);
     } catch (err) {
@@ -486,12 +513,22 @@ function App() {
 
               {llmQueries && (
                 <div className="card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <h4 style={{ marginTop: 0 }}>Подготовленные запросы</h4>
-                  <ul>
-                    {llmQueries.queries.map((q, idx) => (
-                      <li key={idx}>{q}</li>
-                    ))}
-                  </ul>
+                  <h4 style={{ marginTop: 0 }}>Автопоиск поставщиков</h4>
+                  <div className="tag" style={{ marginBottom: 8 }}>
+                    Задача #{llmQueries.task_id}: {llmQueries.status}
+                  </div>
+                  {llmQueries.tech_task_excerpt && (
+                    <p className="muted">{llmQueries.tech_task_excerpt}</p>
+                  )}
+                  {llmQueries.queries?.length ? (
+                    <ul>
+                      {llmQueries.queries.map((q, idx) => (
+                        <li key={idx}>{q}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="muted">Поисковая задача выполняется или ожидает в очереди.</p>
+                  )}
                   <p className="muted">{llmQueries.note}</p>
                 </div>
               )}

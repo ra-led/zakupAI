@@ -25,22 +25,35 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
-from selenium import webdriver
-import helium
 from helium import Link
 
-chrome_options = webdriver.ChromeOptions()
-chrome_options.add_argument("--force-device-scale-factor=1")
-chrome_options.add_argument("--window-size=1350,1000")
-chrome_options.add_argument("--disable-pdf-viewer")
-chrome_options.add_argument("--window-position=0,0")
+driver = None
 
-# chrome_options.add_argument("--no-sandbox")
-# chrome_options.add_argument("--disable-dev-shm-usage")
 
-# Initialize the browser
-driver = helium.start_chrome(headless=True, options=chrome_options)
-driver.set_page_load_timeout(int(os.environ["PAGE_LOAD_TIMEOUT"]))
+def get_driver() -> webdriver.Chrome:
+    global driver
+    if driver is None:
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument("--force-device-scale-factor=1")
+        chrome_options.add_argument("--window-size=1350,1000")
+        chrome_options.add_argument("--disable-pdf-viewer")
+        chrome_options.add_argument("--window-position=0,0")
+        chrome_options.add_argument("--headless=new")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        driver = helium.start_chrome(headless=True, options=chrome_options)
+        driver.set_page_load_timeout(int(os.environ.get("PAGE_LOAD_TIMEOUT", "20")))
+    return driver
+
+
+def shutdown_driver() -> None:
+    global driver
+    if driver:
+        try:
+            driver.close()
+        finally:
+            driver = None
+
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=os.environ.get("OPENAI_BASE_URL"))
 
@@ -412,7 +425,8 @@ def fuzzy_matched(query: str, candidate: str, min_ratio: float = 0.6) -> bool:
 
 # Set up screenshot callback
 def get_screenshot() -> None:
-    png_bytes = driver.get_screenshot_as_png()
+    drv = get_driver()
+    png_bytes = drv.get_screenshot_as_png()
     image = Image.open(BytesIO(png_bytes))
     return image
 
@@ -424,19 +438,20 @@ def search_item_ctrl_f(text: str, nth_result: int = 1) -> str:
         text: The text to search for
         nth_result: Which occurrence to jump to (default: 1)
     """
-    elements = driver.find_elements(By.XPATH, f"//*[contains(text(), '{text}')]")
+    drv = get_driver()
+    elements = drv.find_elements(By.XPATH, f"//*[contains(text(), '{text}')]")
     if nth_result > len(elements):
         raise Exception(f"Match n°{nth_result} not found (only {len(elements)} matches found)")
     result = f"Found {len(elements)} matches for '{text}'."
     elem = elements[nth_result - 1]
-    driver.execute_script("arguments[0].scrollIntoView(true);", elem)
+    drv.execute_script("arguments[0].scrollIntoView(true);", elem)
     result += f"Focused on element {nth_result} of {len(elements)}"
     return result
 
 
 def go_back() -> None:
     """Goes back to previous page."""
-    driver.back()
+    get_driver().back()
 
 
 def close_popups() -> str:
@@ -444,7 +459,7 @@ def close_popups() -> str:
     Closes any visible modal or pop-up on the page. Use this to dismiss pop-up windows!
     This does not work on cookie consent banners.
     """
-    webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+    webdriver.ActionChains(get_driver()).send_keys(Keys.ESCAPE).perform()
 
 
 def visit_website(url: str) -> str:
@@ -455,6 +470,7 @@ def visit_website(url: str) -> str:
     Returns:
         Confirmation string.
     """
+    get_driver()
     helium.go_to(url)
     return f"Opened {url}"
 
@@ -467,6 +483,7 @@ def find_links(text: str) -> List[Link]:
     Returns:
         List of Link elements.
     """
+    get_driver()
     all_links = helium.find_all(Link())
     results: List[helium.Link] = []
     for link in all_links:
@@ -488,6 +505,7 @@ def click_link(element: helium.Link) -> str:
     Returns:
         Confirmation string.
     """
+    get_driver()
     helium.click(element)
     return "Element clicked"
 
@@ -501,6 +519,7 @@ def scroll_page(direction: str = "down", num_pixels: int = 1200) -> str:
     Returns:
         Confirmation string.
     """
+    get_driver()
     helium.scroll_down(num_pixels) if direction == "down" else helium.scroll_up(num_pixels)
     return f"Scrolled {direction} {num_pixels}px"
 
@@ -511,7 +530,7 @@ def get_emails() -> List[str]:
     Returns:
         List of unique emails.
     """
-    html = driver.page_source or ""
+    html = get_driver().page_source or ""
     # Simple RFC-like email regex
     pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
     emails = re.findall(pattern, html)
@@ -799,138 +818,124 @@ def company_validation(
         }
 
 
-# Read technical task (TZ) raw text
-with open('tech_task_example.txt') as f:
-    technical_task_text = f.read()
+def collect_contacts_from_text(
+    technical_task_text: str,
+    query_docs_limit: Optional[int] = None,
+    save_results: bool = False,
+) -> Dict[str, Any]:
+    """Run the full supplier contact ETL for a given technical task text."""
 
-# Summarize TZ
-tz_summary = summarize_tz_for_single_supplier(technical_task_text)
+    tz_summary = summarize_tz_for_single_supplier(technical_task_text)
+    search_queries = tz_summary.get("search_queries", [])
+    tz_for_validation = build_validation_tz(tz_summary)
+    query_docs_limit = query_docs_limit or int(os.environ.get("QUERY_DOCS_LIMIT", "3"))
 
-print('='*40, 'TZ', '='*40)
-print(tz_summary)
-print('='*41 + '='*len('TZ') + '='*41)
-
-item = tz_summary["item"] or "Поставка товаров согласно техническому заданию"
-product_groups = tz_summary.get("product_groups", [])
-search_queries = tz_summary.get("search_queries", [])
-
-# Find suppliers in SERP
-tz_for_validation = build_validation_tz(tz_summary)
-
-print('='*40, 'SPEC', '='*40)
-print(tz_for_validation)
-print('='*41 + '='*len('SPEC') + '='*41)
-
-search_output = []
-seen = set()
-for query in search_queries:
-    print('='*40, 'QUERY', '='*40)
-    print(query)
-    print('='*41 + '='*len('QUERY') + '='*41)
-    
-    results = yandex_search_suppliers(query)
-    query_docs = 0
-    for doc in results:
-        website = doc["link"]
-        if website in seen:
-            print('SKIPPED (REASON: EXIST)', website)
-            continue
-
-        seen.add(website)
-        try:
-            relevant, reason = doc_validation(tz_for_validation, doc=doc)
-        except Exception as e:
-            print(f'SKIPPED (REASON: validation failed -> {e})', website)
-            continue
-        
-        if relevant:
-            try:
-                search_output.append({
-                    "website": website,
-                    "emails": parse_website(website)
-                })
-                query_docs += 1
-                print('QUERY DOCS', query_docs)
-                if query_docs >= int(os.environ["QUERY_DOCS_LIMIT"]):
-                    break
-            
-            except Exception as e:
-                print(f'SKIPPED (REASON: parsing failed -> {e})', website)
+    search_output: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for query in search_queries:
+        results = yandex_search_suppliers(query)
+        query_docs = 0
+        for doc in results:
+            website = doc["link"]
+            if website in seen:
                 continue
-            
-            print('PARSED', website)
-        else:
-            print(f'SKIPPED (REASON: {reason if reason else "Unrelevant"})', website)
-    
-print('COLLECTED', len(search_output), 'CANDIDATES')
 
-# Validate suppliers by website
-processed_contacts = []
-seen = set()
-for contact in tqdm(search_output):
-    website = contact["website"]
-    if website in seen:
-        continue
+            seen.add(website)
+            try:
+                relevant, reason = doc_validation(tz_for_validation, doc=doc)
+            except Exception as exc:  # noqa: BLE001
+                continue
 
-    try:
+            if not relevant:
+                continue
+
+            try:
+                emails = parse_website(website)
+            except Exception:
+                emails = []
+
+            search_output.append({"website": website, "emails": emails, "reason": reason})
+            query_docs += 1
+            if query_docs >= query_docs_limit:
+                break
+
+    processed_contacts: List[Dict[str, Any]] = []
+    seen = set()
+    for contact in tqdm(search_output):
+        website = contact["website"]
+        if website in seen:
+            continue
+
+        main_page_content = ""
+        about_page_content = None
+        catalog_page_content = None
+        about_success = False
+        catalog_success = False
+
         visit_website(website)
         main_page_1 = get_screenshot()
         scroll_page(1000)
         main_page_2 = get_screenshot()
-        main_page_content = html2text.html2text(html = driver.page_source or "")
-        main_page_content = main_page_content[:10000]
-        
+        main_page_content = html2text.html2text(html=get_driver().page_source or "")[:10000]
+
         about_success = open_about_section()
         if about_success:
             about_page_1 = get_screenshot()
             scroll_page(1000)
             about_page_2 = get_screenshot()
-            about_page_content = html2text.html2text(html = driver.page_source or "")
-            about_page_content = about_page_content[:10000]
-    
+            about_page_content = html2text.html2text(html=get_driver().page_source or "")[:10000]
+
         catalog_success = open_catalog()
         if catalog_success:
             catalog_page_1 = get_screenshot()
             scroll_page(1000)
             catalog_page_2 = get_screenshot()
-            catalog_page_content = html2text.html2text(html = driver.page_source or "")
-            catalog_page_content = catalog_page_content[:10000]
-            
-    except Exception as e:
-        print(f'SKIPPED (REASON: validation failed -> {e})', website)
-    
+            catalog_page_content = html2text.html2text(html=get_driver().page_source or "")[:10000]
 
-    validation_result = company_validation(
-        tz_for_validation,
-        website=website,
-        main_page_img=[main_page_1, main_page_2],
-        main_page_content=main_page_content,
-        about_page_img=[about_page_1, about_page_1] if about_success else None,
-        about_page_content=about_page_content if about_success else None,
-        catalog_page_img=[catalog_page_1, catalog_page_2] if catalog_success else None,
-        catalog_page_content=catalog_page_content if catalog_success else None,
-    )
+        validation_result = company_validation(
+            tz_for_validation,
+            website=website,
+            main_page_img=[main_page_1, main_page_2],
+            main_page_content=main_page_content,
+            about_page_img=[about_page_1, about_page_1] if about_success else None,
+            about_page_content=about_page_content if about_success else None,
+            catalog_page_img=[catalog_page_1, catalog_page_2] if catalog_success else None,
+            catalog_page_content=catalog_page_content if catalog_success else None,
+        )
 
-    updated_contact = {}
+        processed_contacts.append(
+            {
+                "is_relevant": bool(validation_result.get("is_relevant", False)),
+                "reason": validation_result.get("reason"),
+                "name": validation_result.get("name"),
+                "website": website,
+                "emails": contact.get("emails", []),
+            }
+        )
+
+        seen.add(website)
+
+    if save_results:
+        with open("processed_contacts.json", "w") as f:
+            f.write(json.dumps(processed_contacts, ensure_ascii=False))
+
+        with open("search_output.json", "w") as f:
+            f.write(json.dumps(search_output, ensure_ascii=False))
+
+    return {
+        "queries": search_queries,
+        "tech_task_excerpt": technical_task_text[:160],
+        "search_output": search_output,
+        "processed_contacts": processed_contacts,
+    }
+
+
+if __name__ == "__main__":
+    with open("tech_task_example.txt") as f:
+        technical_task_text = f.read()
+
     try:
-        updated_contact["is_relevant"] = validation_result["is_relevant"]
-        updated_contact["reason"] = validation_result["reason"]
-        updated_contact["name"] = validation_result.get("name")
-        updated_contact["website"] = website
-    except Exception as e:
-        print("PROBLEM WITH LLM ANSWER")
-        print(validation_result)
-        print(e)
-        continue
-
-    seen.add(website)
-    processed_contacts.append(updated_contact)
-
-driver.close()
-
-# Store results
-with open('processed_contacts.json', 'w') as f:
-    f.write(json.dumps(processed_contacts, ensure_ascii=False))
-
-with open('search_output.json', 'w') as f:
-    f.write(json.dumps(search_output, ensure_ascii=False))
+        result = collect_contacts_from_text(technical_task_text, save_results=True)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    finally:
+        shutdown_driver()

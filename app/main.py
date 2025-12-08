@@ -61,7 +61,8 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     create_db_and_tables()
-    task_queue.start()
+    if os.getenv("ENABLE_EMBEDDED_QUEUE", "false").lower() == "true":
+        task_queue.start()
 
 
 @app.get("/health")
@@ -351,6 +352,8 @@ def search_suppliers(
             queries=[],
             note="Поиск поставщиков поставлен в очередь",
             tech_task_excerpt="",
+            search_output=[],
+            processed_contacts=[],
         )
 
     if state.status == "completed" and not state.queries:
@@ -361,6 +364,8 @@ def search_suppliers(
             queries=plan.queries,
             note=plan.note,
             tech_task_excerpt=state.tech_task_excerpt,
+            search_output=state.search_output,
+            processed_contacts=state.processed_contacts,
         )
 
     return SupplierSearchResponse(
@@ -369,6 +374,8 @@ def search_suppliers(
         queries=state.queries,
         note=state.note or "Поиск поставщиков выполняется",
         tech_task_excerpt=state.tech_task_excerpt,
+        search_output=state.search_output,
+        processed_contacts=state.processed_contacts,
     )
 
 

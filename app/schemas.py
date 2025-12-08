@@ -142,6 +142,8 @@ class SupplierSearchResponse(BaseModel):
     queries: List[str]
     note: str
     tech_task_excerpt: Optional[str] = None
+    search_output: List["SearchOutputEntry"] = Field(default_factory=list)
+    processed_contacts: List["ProcessedContact"] = Field(default_factory=list)
 
 
 class ProcessedContact(BaseModel):
@@ -149,11 +151,12 @@ class ProcessedContact(BaseModel):
     is_relevant: bool = True
     reason: Optional[str] = None
     name: Optional[str] = None
+    emails: List[str] = Field(default_factory=list)
 
 
 class SearchOutputEntry(BaseModel):
     website: str
-    emails: List[str] = []
+    emails: List[str] = Field(default_factory=list)
 
 
 class SupplierImportRequest(BaseModel):

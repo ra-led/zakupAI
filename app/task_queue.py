@@ -18,6 +18,8 @@ class SupplierSearchState:
     queries: List[str]
     note: str
     tech_task_excerpt: str
+    search_output: List[Dict[str, Any]]
+    processed_contacts: List[Dict[str, Any]]
 
 
 class TaskQueue:
@@ -159,11 +161,15 @@ def get_supplier_search_state(purchase_id: int) -> Optional[SupplierSearchState]
         queries: List[str] = []
         note = ""
         tech_task_excerpt = ""
+        search_output: List[Dict[str, Any]] = []
+        processed_contacts: List[Dict[str, Any]] = []
         if task.output_text:
             payload = TaskQueue._load_payload(task.output_text)
             queries = payload.get("queries") or []
-            note = payload.get("note") or ""
+            note = payload.get("note") or payload.get("status") or "Поиск поставщиков выполняется"
             tech_task_excerpt = payload.get("tech_task_excerpt") or ""
+            search_output = payload.get("search_output") or []
+            processed_contacts = payload.get("processed_contacts") or []
 
         return SupplierSearchState(
             task_id=task.id or 0,
@@ -171,6 +177,8 @@ def get_supplier_search_state(purchase_id: int) -> Optional[SupplierSearchState]
             queries=queries,
             note=note,
             tech_task_excerpt=tech_task_excerpt,
+            search_output=search_output,
+            processed_contacts=processed_contacts,
         )
 
 

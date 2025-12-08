@@ -13,6 +13,12 @@
    ```
 3. Через nginx фронтенд доступен на http://localhost, API — на http://localhost/api (Swagger: `/api/docs`). Для отладки можно ходить напрямую на backend http://localhost:8000.
 
+Основные переменные `.env` для поиска поставщиков:
+- `YANDEX_API_KEY`, `YANDEX_FOLDER_ID` — ключ и каталог Yandex Search API.
+- `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` — доступ к LLM для генерации запросов/валидации.
+- `PAGE_LOAD_TIMEOUT`, `QUERY_DOCS_LIMIT` — таймаут загрузки страниц и лимит релевантных документов на запрос.
+- `ETL_POLL_INTERVAL` — частота опроса очереди воркером; `ENABLE_EMBEDDED_QUEUE=false` оставляет обработку только за сервисом `etl`.
+
 ## Локальный запуск backend (без Docker)
 1. Установите зависимости
    ```bash
@@ -49,18 +55,13 @@
 - Хранение почтовых настроек пользователя и истории исходящих/входящих писем.
 - Создание заготовок LLM-задач и генерация поисковых запросов по ТЗ без обращения к внешним API.
 - Автогенерация черновика письма-запроса КП на основе закупки и выбранного поставщика.
-- Автоматическая постановка задач на поиск поставщиков: после создания закупки формируется очередь, фоновый воркер строит поисковые запросы по тексту ТЗ и сохраняет результат в историю задач.
+- Автоматическая постановка задач на поиск поставщиков: после создания закупки формируется очередь, которую обрабатывает отдельный ETL-воркер с реальным парсингом email-адресов.
 
-### Импорт email-контактов из `suppliers_contacts.py`
-1. Выполните внешнюю утилиту `suppliers_contacts.py` (в неё уже встроены примеры LLM-вызовов и парсинга). Она сохранит `processed_contacts.json` и `search_output.json` рядом с проектом.
-2. Импортируйте результат в закупку через API (можно указывать пути к json или передавать сами массивы):
-   ```bash
-   curl -X POST http://localhost:8000/purchases/1/suppliers/import-script-output \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"processed_contacts_path":"processed_contacts.json","search_output_path":"search_output.json"}'
-   ```
-   Сервис объединит контакты и emails из выводов `suppliers_contacts.py`, создаст поставщиков/контакты и вернёт количество добавленных записей.
+### Промышленный ETL для поиска контактов
+- В стеке `docker-compose` добавлен сервис `etl`, который использует `suppliers_contacts.py` для реального поиска сайтов, валидации и извлечения email-адресов (через Yandex Search API + headless Chromium).
+- После создания закупки backend ставит задачу `supplier_search` в таблице `LLMTask`, а воркер `etl` забирает их по одной, сохраняет найденные сайты, создаёт поставщиков и контакты в БД и пишет полный JSON результата в `LLMTask.output_text`.
+- Запрос `POST /purchases/{purchase_id}/suppliers/search` теперь возвращает не только статус, но и детализированные `processed_contacts` и `search_output` (emails), которые уже лежат в базе.
+- Для ручного прогона скрипта можно вызвать `python suppliers_contacts.py`; результаты попадут в `processed_contacts.json` и `search_output.json` и также могут быть импортированы через `/suppliers/import-script-output`.
 
 ### Очередь авто-поиска поставщиков
 - При создании закупки автоматически ставится задача `supplier_search`, в `LLMTask.input_text` сохраняется техническое задание.

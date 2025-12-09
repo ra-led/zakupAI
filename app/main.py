@@ -78,6 +78,12 @@ def register_user(payload: UserCreate, session=Depends(get_session)) -> User:
             detail="Password must be at least 6 characters long",
         )
 
+    if len(payload.password) > 72:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at most 72 characters long",
+        )
+
     existing = session.exec(select(User).where(User.email == payload.email)).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists")

@@ -182,6 +182,7 @@ function App() {
   const [error, setError] = useState('');
 
   const [purchaseForm, setPurchaseForm] = useState({ custom_name: '', terms_text: '' });
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [supplierForm, setSupplierForm] = useState({ company_name: '', website_url: '', relevance_score: '' });
   const [contactForm, setContactForm] = useState({ supplier_id: '', email: '', source_url: '', is_selected_for_request: true });
   const [searchHints, setSearchHints] = useState('');
@@ -284,6 +285,7 @@ function App() {
       setPurchaseForm({ custom_name: '', terms_text: '' });
       setMessage('Закупка создана');
       await loadPurchases();
+      setShowPurchaseModal(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -409,27 +411,61 @@ function App() {
                 isActive={purchase.id === selectedId}
               />
             ))}
-          </div>
-          <form onSubmit={createPurchase} style={{ marginTop: 16 }}>
-            <div className="section-title">Новая закупка</div>
-            <label>Название</label>
-            <input
-              value={purchaseForm.custom_name}
-              onChange={(e) => setPurchaseForm((f) => ({ ...f, custom_name: e.target.value }))}
-              placeholder="Например, Поставка серверов"
-            />
-            <label>Описание / ТЗ</label>
-            <textarea
-              rows={3}
-              value={purchaseForm.terms_text}
-              onChange={(e) => setPurchaseForm((f) => ({ ...f, terms_text: e.target.value }))}
-              placeholder="Кратко опишите предмет закупки"
-            />
-            <button type="submit" className="primary" disabled={busy}>
-              Создать закупку
+            <button
+              type="button"
+              className="card create-card"
+              onClick={() => setShowPurchaseModal(true)}
+              disabled={busy}
+            >
+              <div className="create-card__icon">＋</div>
+              <div className="create-card__text">Создать новую закупку</div>
             </button>
-          </form>
+          </div>
         </div>
+
+        {showPurchaseModal && (
+          <div className="modal-overlay" role="dialog" aria-modal="true">
+            <div className="modal">
+              <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0 }}>Новая закупка</h3>
+                <button
+                  type="button"
+                  className="linkish"
+                  onClick={() => setShowPurchaseModal(false)}
+                  disabled={busy}
+                  aria-label="Закрыть"
+                >
+                  ✕
+                </button>
+              </div>
+              <form onSubmit={createPurchase} className="stack" style={{ flexDirection: 'column', marginTop: 12 }}>
+                <label>Название</label>
+                <input
+                  value={purchaseForm.custom_name}
+                  onChange={(e) => setPurchaseForm((f) => ({ ...f, custom_name: e.target.value }))}
+                  placeholder="Например, Поставка серверов"
+                  required
+                />
+                <label>Описание / ТЗ</label>
+                <textarea
+                  rows={4}
+                  value={purchaseForm.terms_text}
+                  onChange={(e) => setPurchaseForm((f) => ({ ...f, terms_text: e.target.value }))}
+                  placeholder="Кратко опишите предмет закупки"
+                  required
+                />
+                <div className="stack" style={{ justifyContent: 'flex-end', marginTop: 6 }}>
+                  <button type="button" className="secondary" onClick={() => setShowPurchaseModal(false)} disabled={busy}>
+                    Отмена
+                  </button>
+                  <button type="submit" className="primary" disabled={busy}>
+                    Создать закупку
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {selectedPurchase && (
           <>

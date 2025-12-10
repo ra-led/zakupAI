@@ -98,11 +98,13 @@ function AuthPanel({ onAuth, busy }) {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            aria-describedby="password-help"
+            aria-describedby={mode === 'register' ? 'password-help' : undefined}
           />
-          <div id="password-help" className="password-hint">
-            Пароль от 6 до 72 символов. Используйте буквы и цифры, чтобы обеспечить безопасность.
-          </div>
+          {mode === 'register' && (
+            <div id="password-help" className="password-hint">
+              Пароль от 6 до 72 символов. Используйте буквы и цифры, чтобы обеспечить безопасность.
+            </div>
+          )}
           <button type="submit" className="primary" disabled={busy} style={{ width: '100%' }}>
             {busy ? 'Пожалуйста, подождите…' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
           </button>

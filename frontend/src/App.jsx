@@ -50,7 +50,6 @@ function AuthPanel({ onAuth, busy }) {
 
   return (
     <div className="card" style={{ maxWidth: 420, margin: '60px auto' }}>
-      <h2 style={{ marginTop: 0 }}>{mode === 'login' ? 'Вход' : 'Регистрация'} в zakupAI</h2>
       <div className="auth-tabs" role="tablist" aria-label="Авторизация">
         <button
           type="button"
@@ -73,40 +72,42 @@ function AuthPanel({ onAuth, busy }) {
           Регистрация
         </button>
       </div>
-      {error && <div className="alert">{error}</div>}
-      <form onSubmit={handleSubmit}>
-        <label htmlFor="email">Email</label>
-        <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+      <div className="auth-mode-body" key={mode}>
+        {error && <div className="alert">{error}</div>}
+        <form onSubmit={handleSubmit}>
+          <label htmlFor="email">Email</label>
+          <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
 
-        <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-          <label htmlFor="password" style={{ marginBottom: 0 }}>
-            Пароль
-          </label>
-          <button
-            type="button"
-            className="linkish"
-            onClick={() => setShowPassword((v) => !v)}
-            disabled={busy}
-            style={{ background: 'transparent', color: '#2563eb', padding: 0, width: 'auto' }}
-          >
-            {showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+          <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+            <label htmlFor="password" style={{ marginBottom: 0 }}>
+              Пароль
+            </label>
+            <button
+              type="button"
+              className="linkish"
+              onClick={() => setShowPassword((v) => !v)}
+              disabled={busy}
+              style={{ background: 'transparent', color: '#2563eb', padding: 0, width: 'auto' }}
+            >
+              {showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+            </button>
+          </div>
+          <input
+            id="password"
+            type={showPassword ? 'text' : 'password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            aria-describedby="password-help"
+          />
+          <div id="password-help" className="password-hint">
+            Пароль от 6 до 72 символов. Используйте буквы и цифры, чтобы обеспечить безопасность.
+          </div>
+          <button type="submit" className="primary" disabled={busy} style={{ width: '100%' }}>
+            {busy ? 'Пожалуйста, подождите…' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
           </button>
-        </div>
-        <input
-          id="password"
-          type={showPassword ? 'text' : 'password'}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          aria-describedby="password-help"
-        />
-        <div id="password-help" className="password-hint">
-          Пароль от 6 до 72 символов. Используйте буквы и цифры, чтобы обеспечить безопасность.
-        </div>
-        <button type="submit" className="primary" disabled={busy} style={{ width: '100%' }}>
-          {busy ? 'Пожалуйста, подождите…' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
-        </button>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }

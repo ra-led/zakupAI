@@ -115,16 +115,47 @@ function AuthPanel({ onAuth, busy }) {
 }
 
 function PurchaseCard({ purchase, onSelect, isActive }) {
+  const [expanded, setExpanded] = useState(false);
+  const SUMMARY_LIMIT = 260;
+  const terms = purchase.terms_text || '';
+  const hasLongDescription = terms.length > SUMMARY_LIMIT;
+  const preview = expanded || !hasLongDescription ? terms : `${terms.slice(0, SUMMARY_LIMIT)}…`;
+
   return (
-    <div className="card" style={{ border: isActive ? '2px solid #6366f1' : '1px solid #e2e8f0', cursor: 'pointer' }} onClick={onSelect}>
-      <div className="stack" style={{ justifyContent: 'space-between' }}>
-        <div>
-          <h3 style={{ margin: '0 0 6px 0' }}>{purchase.full_name}</h3>
-          <div className="muted">Статус: {purchase.status}</div>
+    <div
+      className="card"
+      style={{ border: isActive ? '2px solid #6366f1' : '1px solid #e2e8f0', cursor: 'pointer' }}
+      onClick={onSelect}
+    >
+      <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div className="stack" style={{ alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+          <h3 style={{ margin: '0 0 6px 0', flex: 1, minWidth: 0 }}>{purchase.full_name}</h3>
+          <span className="tag" aria-label="Статус закупки">
+            {purchase.status}
+          </span>
         </div>
-        <span className="tag">#{purchase.auto_number}</span>
+        <span className="tag" aria-label="Номер закупки">#{purchase.auto_number}</span>
       </div>
-      {purchase.terms_text && <p className="muted">{purchase.terms_text.slice(0, 160)}</p>}
+      {terms && (
+        <>
+          <p className="muted" style={{ marginBottom: hasLongDescription ? 8 : undefined }}>
+            {preview}
+          </p>
+          {hasLongDescription && (
+            <button
+              type="button"
+              className="linkish"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((v) => !v);
+              }}
+              style={{ padding: 0 }}
+            >
+              {expanded ? 'Свернуть' : 'Показать полностью'}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -188,6 +219,7 @@ function App() {
   const [searchHints, setSearchHints] = useState('');
   const [llmQueries, setLlmQueries] = useState(null);
   const [emailDraft, setEmailDraft] = useState(null);
+  const [purchaseDetailsExpanded, setPurchaseDetailsExpanded] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -254,6 +286,7 @@ function App() {
       loadSuppliers(selectedId);
       setEmailDraft(null);
       setLlmQueries(null);
+      setPurchaseDetailsExpanded(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -383,6 +416,7 @@ function App() {
   }
 
   const selectedPurchase = purchases.find((p) => p.id === selectedId);
+  const purchaseHasLongText = (selectedPurchase?.terms_text || '').length > 420;
 
   return (
     <div className="app-shell">
@@ -470,16 +504,32 @@ function App() {
         {selectedPurchase && (
           <>
             <div className="card">
-              <h2 style={{ marginTop: 0 }}>{selectedPurchase.full_name}</h2>
-              <p className="muted">{selectedPurchase.terms_text || 'Описание не заполнено'}</p>
-              <div className="stack" style={{ marginTop: 10 }}>
-                <div className="tag">Статус: {selectedPurchase.status}</div>
+              <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="stack" style={{ alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                  <h2 style={{ marginTop: 0, marginBottom: 6, flex: 1, minWidth: 0 }}>{selectedPurchase.full_name}</h2>
+                  <div className="tag">Статус: {selectedPurchase.status}</div>
+                </div>
                 {selectedPurchase.nmck_value && (
-                  <div className="tag">
+                  <div className="tag" style={{ whiteSpace: 'nowrap' }}>
                     НМЦК: {selectedPurchase.nmck_value} {selectedPurchase.nmck_currency || ''}
                   </div>
                 )}
               </div>
+              <p className="muted" style={{ marginBottom: purchaseHasLongText ? 8 : undefined }}>
+                {purchaseDetailsExpanded || !purchaseHasLongText
+                  ? selectedPurchase.terms_text || 'Описание не заполнено'
+                  : `${(selectedPurchase.terms_text || '').slice(0, 420)}…`}
+              </p>
+              {purchaseHasLongText && (
+                <button
+                  type="button"
+                  className="linkish"
+                  onClick={() => setPurchaseDetailsExpanded((v) => !v)}
+                  style={{ padding: 0 }}
+                >
+                  {purchaseDetailsExpanded ? 'Свернуть' : 'Показать полностью'}
+                </button>
+              )}
             </div>
 
             <div className="card">

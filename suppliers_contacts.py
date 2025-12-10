@@ -556,7 +556,12 @@ def open_about_section() -> bool:
     for link_text in contacts_texts:
         links = find_links(link_text)
         if links:
-            click_link(links[0])
+            try:
+                click_link(links[0])
+            except Exception as exc:  # noqa: BLE001
+                print(f"open_about_section click failed: {exc}")
+                continue
+
             return True
 
     return False
@@ -878,7 +883,11 @@ def collect_contacts_from_text(
         main_page_2 = get_screenshot()
         main_page_content = html2text.html2text(html=get_driver().page_source or "")[:10000]
 
-        about_success = open_about_section()
+        try:
+            about_success = open_about_section()
+        except Exception as exc:  # noqa: BLE001
+            print(f"open_about_section failed for {website}: {exc}")
+            about_success = False
         if about_success:
             about_page_1 = get_screenshot()
             scroll_page(1000)

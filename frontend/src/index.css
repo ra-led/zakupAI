@@ -133,29 +133,27 @@ button.secondary {
   flex-wrap: wrap;
 }
 
-.mode-switch {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-bottom: 12px;
+.auth-tabs {
+  display: flex;
+  gap: 10px;
+  margin: 4px 0 16px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-.mode-switch__btn {
-  border: 1px solid #cbd5e1;
-  background: #f8fafc;
-  color: #0f172a;
-  padding: 10px 12px;
-  border-radius: 12px;
+.auth-tabs__btn {
+  border: none;
+  background: transparent;
+  color: #475569;
   font-weight: 700;
+  padding: 10px 4px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  border-bottom: 3px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
 }
 
-.mode-switch__btn.active {
-  border-color: #6366f1;
-  background: linear-gradient(120deg, #eef2ff, #ecfeff);
+.auth-tabs__btn.active {
   color: #1e1b4b;
-  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.18);
+  border-color: #6366f1;
 }
 
 .password-hint {

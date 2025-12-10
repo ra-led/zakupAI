@@ -51,25 +51,26 @@ function AuthPanel({ onAuth, busy }) {
   return (
     <div className="card" style={{ maxWidth: 420, margin: '60px auto' }}>
       <h2 style={{ marginTop: 0 }}>{mode === 'login' ? 'Вход' : 'Регистрация'} в zakupAI</h2>
-      <p className="muted" style={{ marginTop: -6, marginBottom: 12 }}>
-        Выберите режим, чтобы сразу понять, входите вы или создаёте новый аккаунт.
-      </p>
-      <div className="mode-switch">
+      <div className="auth-tabs" role="tablist" aria-label="Авторизация">
         <button
           type="button"
-          className={mode === 'login' ? 'mode-switch__btn active' : 'mode-switch__btn'}
+          role="tab"
+          aria-selected={mode === 'login'}
+          className={mode === 'login' ? 'auth-tabs__btn active' : 'auth-tabs__btn'}
           onClick={() => setMode('login')}
           disabled={busy}
         >
-          Войти
+          Вход
         </button>
         <button
           type="button"
-          className={mode === 'register' ? 'mode-switch__btn active' : 'mode-switch__btn'}
+          role="tab"
+          aria-selected={mode === 'register'}
+          className={mode === 'register' ? 'auth-tabs__btn active' : 'auth-tabs__btn'}
           onClick={() => setMode('register')}
           disabled={busy}
         >
-          Создать аккаунт
+          Регистрация
         </button>
       </div>
       {error && <div className="alert">{error}</div>}

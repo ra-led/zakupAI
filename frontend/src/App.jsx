@@ -115,11 +115,9 @@ function AuthPanel({ onAuth, busy }) {
 }
 
 function PurchaseCard({ purchase, onSelect, isActive }) {
-  const [expanded, setExpanded] = useState(false);
-  const SUMMARY_LIMIT = 260;
+  const SUMMARY_LIMIT = 100;
   const terms = purchase.terms_text || '';
-  const hasLongDescription = terms.length > SUMMARY_LIMIT;
-  const preview = expanded || !hasLongDescription ? terms : `${terms.slice(0, SUMMARY_LIMIT)}…`;
+  const preview = terms.length > SUMMARY_LIMIT ? `${terms.slice(0, SUMMARY_LIMIT)}…` : terms;
 
   return (
     <div
@@ -127,34 +125,11 @@ function PurchaseCard({ purchase, onSelect, isActive }) {
       style={{ border: isActive ? '2px solid #6366f1' : '1px solid #e2e8f0', cursor: 'pointer' }}
       onClick={onSelect}
     >
-      <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div className="stack" style={{ alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-          <h3 style={{ margin: '0 0 6px 0', flex: 1, minWidth: 0 }}>{purchase.full_name}</h3>
-          <span className="tag" aria-label="Статус закупки">
-            {purchase.status}
-          </span>
-        </div>
-        <span className="tag" aria-label="Номер закупки">#{purchase.auto_number}</span>
-      </div>
+      <h3 style={{ margin: '0 0 6px 0' }}>{purchase.full_name}</h3>
       {terms && (
-        <>
-          <p className="muted" style={{ marginBottom: hasLongDescription ? 8 : undefined }}>
-            {preview}
-          </p>
-          {hasLongDescription && (
-            <button
-              type="button"
-              className="linkish"
-              onClick={(e) => {
-                e.stopPropagation();
-                setExpanded((v) => !v);
-              }}
-              style={{ padding: 0 }}
-            >
-              {expanded ? 'Свернуть' : 'Показать полностью'}
-            </button>
-          )}
-        </>
+        <p className="muted" style={{ marginBottom: 0 }}>
+          {preview}
+        </p>
       )}
     </div>
   );

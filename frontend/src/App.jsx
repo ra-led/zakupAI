@@ -31,6 +31,7 @@ function AuthPanel({ onAuth, busy }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (evt) => {
     evt.preventDefault();
@@ -50,12 +51,25 @@ function AuthPanel({ onAuth, busy }) {
   return (
     <div className="card" style={{ maxWidth: 420, margin: '60px auto' }}>
       <h2 style={{ marginTop: 0 }}>{mode === 'login' ? 'Вход' : 'Регистрация'} в zakupAI</h2>
-      <div className="stack">
-        <button className="secondary" onClick={() => setMode('login')} disabled={busy || mode === 'login'}>
-          Уже есть аккаунт
+      <p className="muted" style={{ marginTop: -6, marginBottom: 12 }}>
+        Выберите режим, чтобы сразу понять, входите вы или создаёте новый аккаунт.
+      </p>
+      <div className="mode-switch">
+        <button
+          type="button"
+          className={mode === 'login' ? 'mode-switch__btn active' : 'mode-switch__btn'}
+          onClick={() => setMode('login')}
+          disabled={busy}
+        >
+          Войти
         </button>
-        <button className="secondary" onClick={() => setMode('register')} disabled={busy || mode === 'register'}>
-          Создать новый
+        <button
+          type="button"
+          className={mode === 'register' ? 'mode-switch__btn active' : 'mode-switch__btn'}
+          onClick={() => setMode('register')}
+          disabled={busy}
+        >
+          Создать аккаунт
         </button>
       </div>
       {error && <div className="alert">{error}</div>}
@@ -63,14 +77,31 @@ function AuthPanel({ onAuth, busy }) {
         <label htmlFor="email">Email</label>
         <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
 
-        <label htmlFor="password">Пароль</label>
+        <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+          <label htmlFor="password" style={{ marginBottom: 0 }}>
+            Пароль
+          </label>
+          <button
+            type="button"
+            className="linkish"
+            onClick={() => setShowPassword((v) => !v)}
+            disabled={busy}
+            style={{ background: 'transparent', color: '#2563eb', padding: 0, width: 'auto' }}
+          >
+            {showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+          </button>
+        </div>
         <input
           id="password"
-          type="password"
+          type={showPassword ? 'text' : 'password'}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
+          aria-describedby="password-help"
         />
+        <div id="password-help" className="password-hint">
+          Пароль от 6 до 72 символов. Используйте буквы и цифры, чтобы обеспечить безопасность.
+        </div>
         <button type="submit" className="primary" disabled={busy} style={{ width: '100%' }}>
           {busy ? 'Пожалуйста, подождите…' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
         </button>

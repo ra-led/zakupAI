@@ -43,6 +43,14 @@ body {
   margin-bottom: 12px;
 }
 
+.linkish {
+  background: transparent;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+  font-weight: 600;
+}
+
 .main {
   padding: 32px;
 }
@@ -123,6 +131,42 @@ button.secondary {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mode-switch__btn {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mode-switch__btn.active {
+  border-color: #6366f1;
+  background: linear-gradient(120deg, #eef2ff, #ecfeff);
+  color: #1e1b4b;
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.18);
+}
+
+.password-hint {
+  font-size: 13px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: -4px;
+  margin-bottom: 10px;
 }
 
 .muted {

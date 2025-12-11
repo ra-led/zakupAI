@@ -46,6 +46,7 @@ class SupplierContact(SQLModel, table=True):
     supplier_id: int = Field(foreign_key="supplier.id")
     email: str
     source_url: Optional[str] = None
+    reason: Optional[str] = None
     is_selected_for_request: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

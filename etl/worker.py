@@ -41,10 +41,13 @@ def _upsert_suppliers(session: Session, task: LLMTask, processed_contacts: List[
                 company_name=contact.get("name") or website,
                 website_url=website,
                 relevance_score=1.0,
+                reason=contact.get("reason"),
             )
             session.add(supplier)
             session.commit()
             session.refresh(supplier)
+        elif not supplier.reason:
+            supplier.reason = contact.get("reason")
 
         for email in email_map.get(website, []):
             existing_contact = session.exec(
@@ -55,7 +58,11 @@ def _upsert_suppliers(session: Session, task: LLMTask, processed_contacts: List[
             if not existing_contact:
                 session.add(
                     SupplierContact(
-                        supplier_id=supplier.id, email=email, source_url=website, is_selected_for_request=False
+                        supplier_id=supplier.id,
+                        email=email,
+                        source_url=website,
+                        reason=contact.get("reason"),
+                        is_selected_for_request=False,
                     )
                 )
 

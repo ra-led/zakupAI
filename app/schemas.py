@@ -64,6 +64,7 @@ class SupplierRead(BaseModel):
 class SupplierContactCreate(BaseModel):
     email: EmailStr
     source_url: Optional[str] = None
+    reason: Optional[str] = None
     is_selected_for_request: bool = False
 
 
@@ -71,6 +72,7 @@ class SupplierContactRead(BaseModel):
     id: int
     email: EmailStr
     source_url: Optional[str]
+    reason: Optional[str]
     is_selected_for_request: bool
     created_at: datetime
 

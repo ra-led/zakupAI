@@ -234,6 +234,7 @@ def add_supplier_contact(
         supplier_id=supplier_id,
         email=payload.email,
         source_url=payload.source_url,
+        reason=payload.reason,
         is_selected_for_request=payload.is_selected_for_request,
     )
     session.add(contact)
@@ -482,6 +483,7 @@ def import_suppliers_from_script(
                 supplier_id=supplier.id,
                 email=email,
                 source_url=website,
+                reason=reason,
             )
             session.add(contact)
             contacts_created += 1

@@ -534,10 +534,39 @@ def get_emails() -> List[str]:
     # Simple RFC-like email regex
     pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
     emails = re.findall(pattern, html)
+    # Filter obvious false positives (asset filenames like image@2x.jpg)
+    image_like_tlds = {
+        "jpg",
+        "jpeg",
+        "png",
+        "webp",
+        "gif",
+        "svg",
+        "bmp",
+        "tiff",
+        "avif",
+        "jfif",
+        "ico",
+    }
+
+    def is_plausible_email(candidate: str) -> bool:
+        local, _, domain = candidate.partition("@")
+        if not local or not domain:
+            return False
+        tld = domain.rsplit(".", 1)[-1].lower()
+        if tld in image_like_tlds:
+            return False
+        return True
+
+    filtered: List[str] = []
+    for e in emails:
+        if is_plausible_email(e):
+            filtered.append(e)
+
     # Deduplicate while preserving order
     seen = set()
     result: List[str] = []
-    for e in emails:
+    for e in filtered:
         if e not in seen:
             seen.add(e)
             result.append(e)

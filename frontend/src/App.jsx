@@ -144,7 +144,8 @@ function SupplierTable({
   allSelected,
   onAddSupplier,
 }) {
-  const renderContactReason = (item) => item.reason || 'Комментарий не указан';
+  const renderSupplierReason = (item) => item.reason || 'Комментарий не указан';
+  const sourceLabel = (contact) => (contact.source_url ? 'Веб-поиск' : 'Добавлено вручную');
 
   return (
     <div className="supplier-table-wrapper">
@@ -160,7 +161,6 @@ function SupplierTable({
               <input type="checkbox" checked={allSelected} onChange={onToggleAll} />
             </th>
             <th>Поставщик / контакт</th>
-            <th>Email</th>
             <th>Источник</th>
             <th>Комментарий</th>
           </tr>
@@ -172,13 +172,7 @@ function SupplierTable({
             return (
               <Fragment key={supplierRowId}>
                 <tr key={supplierRowId} className="supplier-row">
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedRows.has(supplierRowId)}
-                      onChange={() => onToggleRow(supplierRowId)}
-                    />
-                  </td>
+                  <td />
                   <td>
                     <div className="supplier-name">{supplier.company_name || supplier.website_url || 'Без названия'}</div>
                     {supplier.website_url && (
@@ -188,8 +182,7 @@ function SupplierTable({
                     )}
                   </td>
                   <td className="muted">—</td>
-                  <td className="muted">—</td>
-                  <td className="muted">{renderContactReason(supplier)}</td>
+                  <td className="muted">{renderSupplierReason(supplier)}</td>
                 </tr>
                 {contacts.map((contact) => {
                   const contactRowId = `contact-${contact.id}`;
@@ -204,19 +197,11 @@ function SupplierTable({
                       </td>
                       <td>
                         <div className="contact-label">Контакт</div>
+                        <div className="contact-email">{contact.email}</div>
                         {contact.is_selected_for_request && <span className="tag">Для рассылки</span>}
                       </td>
-                      <td>{contact.email}</td>
-                      <td>
-                        {contact.source_url ? (
-                          <a href={contact.source_url} target="_blank" rel="noreferrer">
-                            {contact.source_url}
-                          </a>
-                        ) : (
-                          <span className="muted">—</span>
-                        )}
-                      </td>
-                      <td className="muted">{renderContactReason(contact)}</td>
+                      <td className="muted">{sourceLabel(contact)}</td>
+                      <td className="muted"></td>
                     </tr>
                   );
                 })}
@@ -225,7 +210,7 @@ function SupplierTable({
           })}
           <tr className="add-supplier-row">
             <td />
-            <td colSpan={4}>
+            <td colSpan={3}>
               <button type="button" className="linkish" onClick={onAddSupplier} style={{ padding: 0 }}>
                 + Добавить поставщика вручную
               </button>
@@ -451,7 +436,6 @@ function App() {
   const allSelectableRowIds = useMemo(() => {
     const ids = [];
     for (const s of suppliers) {
-      ids.push(`supplier-${s.id}`);
       (contactsBySupplier[s.id] || []).forEach((c) => ids.push(`contact-${c.id}`));
     }
     return ids;

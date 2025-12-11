@@ -160,9 +160,9 @@ function SupplierTable({
             <th style={{ width: 48 }}>
               <input type="checkbox" checked={allSelected} onChange={onToggleAll} />
             </th>
-            <th>Поставщик / контакт</th>
-            <th>Источник</th>
-            <th>Комментарий</th>
+            <th style={{ width: '33%' }}>Поставщик / email</th>
+            <th style={{ width: '17%' }}>Источник</th>
+            <th style={{ width: '50%' }}>Комментарий</th>
           </tr>
         </thead>
         <tbody>
@@ -196,7 +196,6 @@ function SupplierTable({
                         />
                       </td>
                       <td>
-                        <div className="contact-label">Контакт</div>
                         <div className="contact-email">{contact.email}</div>
                         {contact.is_selected_for_request && <span className="tag">Для рассылки</span>}
                       </td>

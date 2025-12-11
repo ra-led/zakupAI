@@ -197,6 +197,7 @@ def create_supplier(
         company_name=payload.company_name,
         website_url=payload.website_url,
         relevance_score=payload.relevance_score,
+        reason=payload.reason,
     )
     session.add(supplier)
     session.commit()
@@ -444,6 +445,7 @@ def import_suppliers_from_script(
             company_name = parsed.hostname or website
 
         relevance_score = 1.0 if item.get("is_relevant", True) else 0.0
+        reason = item.get("reason")
 
         if supplier:
             suppliers_matched += 1
@@ -451,12 +453,15 @@ def import_suppliers_from_script(
                 supplier.company_name = company_name
             if supplier.relevance_score is None:
                 supplier.relevance_score = relevance_score
+            if reason:
+                supplier.reason = reason
         else:
             supplier = Supplier(
                 purchase_id=purchase_id,
                 company_name=company_name,
                 website_url=website,
                 relevance_score=relevance_score,
+                reason=reason,
             )
             session.add(supplier)
             session.commit()

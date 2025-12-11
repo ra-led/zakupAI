@@ -147,7 +147,9 @@ function SupplierList({ suppliers, contactsBySupplier }) {
               {supplier.website_url}
             </a>
           )}
-          <div className="muted" style={{ marginTop: 6 }}>Релевантность: {supplier.relevance_score ?? '—'}</div>
+          <div className="muted" style={{ marginTop: 6 }}>
+            {supplier.reason ? `Комментарий: ${supplier.reason}` : 'Комментарий не указан'}
+          </div>
           <div style={{ marginTop: 10 }}>
             <div className="section-title">Контакты</div>
             {(contactsBySupplier[supplier.id] || []).length ? (
@@ -155,11 +157,6 @@ function SupplierList({ suppliers, contactsBySupplier }) {
                 {contactsBySupplier[supplier.id].map((c) => (
                   <li key={c.id}>
                     <strong>{c.email}</strong>
-                    {c.source_url && (
-                      <a href={c.source_url} target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>
-                        источник
-                      </a>
-                    )}
                     {c.is_selected_for_request && <span className="tag">Для рассылки</span>}
                   </li>
                 ))}

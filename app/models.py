@@ -37,6 +37,7 @@ class Supplier(SQLModel, table=True):
     company_name: Optional[str] = None
     website_url: Optional[str] = None
     relevance_score: Optional[float] = None
+    reason: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

@@ -49,6 +49,7 @@ class SupplierCreate(BaseModel):
     company_name: Optional[str] = None
     website_url: Optional[str] = None
     relevance_score: Optional[float] = None
+    reason: Optional[str] = None
 
 
 class SupplierRead(BaseModel):
@@ -56,6 +57,7 @@ class SupplierRead(BaseModel):
     company_name: Optional[str]
     website_url: Optional[str]
     relevance_score: Optional[float]
+    reason: Optional[str]
     created_at: datetime
 
 

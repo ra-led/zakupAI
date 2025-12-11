@@ -146,8 +146,6 @@ function SupplierTable({
 }) {
   const renderContactReason = (item) => item.reason || 'Комментарий не указан';
 
-  if (!suppliers.length) return <p className="muted">Поставщики пока не добавлены.</p>;
-
   return (
     <div className="supplier-table-wrapper">
       <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -254,11 +252,10 @@ function App() {
 
   const [purchaseForm, setPurchaseForm] = useState({ custom_name: '', terms_text: '' });
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
-  const makeBlankContact = () => ({ email: '', source_url: '', is_selected_for_request: true, reason: '' });
+  const makeBlankContact = () => ({ email: '' });
   const [supplierForm, setSupplierForm] = useState({
     company_name: '',
     website_url: '',
-    relevance_score: '',
     reason: '',
     contacts: [makeBlankContact()],
   });
@@ -387,7 +384,6 @@ function App() {
         method: 'POST',
         body: {
           ...supplierPayload,
-          relevance_score: supplierPayload.relevance_score ? Number(supplierPayload.relevance_score) : null,
           reason: supplierPayload.reason || null,
         },
       });
@@ -396,13 +392,10 @@ function App() {
           method: 'POST',
           body: {
             email: contact.email,
-            source_url: contact.source_url || undefined,
-            is_selected_for_request: contact.is_selected_for_request ?? false,
-            reason: contact.reason || undefined,
           },
         });
       }
-      setSupplierForm({ company_name: '', website_url: '', relevance_score: '', reason: '', contacts: [makeBlankContact()] });
+      setSupplierForm({ company_name: '', website_url: '', reason: '', contacts: [makeBlankContact()] });
       setMessage('Поставщик добавлен');
       await loadSuppliers(selectedId);
       setShowSupplierModal(false);
@@ -602,14 +595,9 @@ function App() {
             <div className="card">
               <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
                 <h3 style={{ margin: 0 }}>Поставщики</h3>
-                <div className="stack" style={{ gap: 8 }}>
-                  <button className="secondary" onClick={() => loadSuppliers(selectedPurchase.id)} disabled={busy}>
-                    Обновить
-                  </button>
-                  <button className="primary" type="button" onClick={() => setShowSupplierModal(true)} disabled={busy}>
-                    Добавить поставщика
-                  </button>
-                </div>
+                <button className="secondary" onClick={() => loadSuppliers(selectedPurchase.id)} disabled={busy}>
+                  Обновить
+                </button>
               </div>
               <SupplierTable
                 suppliers={suppliers}
@@ -657,15 +645,6 @@ function App() {
                       onChange={(e) => setSupplierForm((f) => ({ ...f, reason: e.target.value }))}
                       placeholder="Почему этот поставщик релевантен"
                     />
-                    <label>Релевантность (0-1)</label>
-                    <input
-                      value={supplierForm.relevance_score}
-                      onChange={(e) => setSupplierForm((f) => ({ ...f, relevance_score: e.target.value }))}
-                      type="number"
-                      min="0"
-                      max="1"
-                      step="0.1"
-                    />
 
                     <div className="section-title">Контакты</div>
                     {supplierForm.contacts.map((contact, idx) => (
@@ -702,49 +681,6 @@ function App() {
                           placeholder="sales@example.com"
                           required={idx === 0}
                         />
-                        <label>Источник</label>
-                        <input
-                          value={contact.source_url}
-                          onChange={(e) =>
-                            setSupplierForm((f) => ({
-                              ...f,
-                              contacts: f.contacts.map((c, cIdx) =>
-                                cIdx === idx ? { ...c, source_url: e.target.value } : c
-                              ),
-                            }))
-                          }
-                          placeholder="https://example.com/contact"
-                        />
-                        <label>Комментарий (необязательно)</label>
-                        <textarea
-                          rows={2}
-                          value={contact.reason}
-                          onChange={(e) =>
-                            setSupplierForm((f) => ({
-                              ...f,
-                              contacts: f.contacts.map((c, cIdx) =>
-                                cIdx === idx ? { ...c, reason: e.target.value } : c
-                              ),
-                            }))
-                          }
-                          placeholder="Уточните почему контакт релевантен"
-                        />
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <input
-                            type="checkbox"
-                            checked={contact.is_selected_for_request}
-                            onChange={(e) =>
-                              setSupplierForm((f) => ({
-                                ...f,
-                                contacts: f.contacts.map((c, cIdx) =>
-                                  cIdx === idx ? { ...c, is_selected_for_request: e.target.checked } : c
-                                ),
-                              }))
-                            }
-                            style={{ width: 'auto' }}
-                          />
-                          Добавить в рассылку
-                        </label>
                       </div>
                     ))}
 

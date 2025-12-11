@@ -256,6 +256,49 @@ button.secondary {
   border-bottom: 1px solid #e2e8f0;
 }
 
+.supplier-table-wrapper {
+  margin-top: 10px;
+}
+
+.supplier-table .supplier-row {
+  background: #f8fafc;
+}
+
+.supplier-table .contact-row td {
+  background: #ffffff;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.supplier-table .contact-row td:first-child {
+  border-left: 3px solid #e2e8f0;
+}
+
+.supplier-name {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.contact-email {
+  font-weight: 700;
+}
+
+.contact-label {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.add-supplier-row td {
+  padding: 14px 10px;
+  background: #f8fafc;
+}
+
+.contact-block {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
 .section-title {
   margin: 8px 0 12px 0;
   font-size: 16px;

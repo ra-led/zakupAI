@@ -196,7 +196,17 @@ function SupplierTable({
                         />
                       </td>
                       <td>
-                        <div className="contact-email">{contact.email}</div>
+                        <div className="contact-email-row">
+                          <div className="contact-email">{contact.email}</div>
+                          <button
+                            type="button"
+                            className="copy-btn"
+                            aria-label="Скопировать email"
+                            onClick={() => navigator.clipboard.writeText(contact.email)}
+                          >
+                            📋
+                          </button>
+                        </div>
                         {contact.is_selected_for_request && <span className="tag">Для рассылки</span>}
                       </td>
                       <td className="muted">{sourceLabel(contact)}</td>

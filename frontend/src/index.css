@@ -279,12 +279,32 @@ button.secondary {
 }
 
 .contact-email {
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .contact-label {
   font-weight: 700;
   color: #0f172a;
+}
+
+.contact-email-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.copy-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.copy-btn:hover {
+  background: #e2e8f0;
 }
 
 .add-supplier-row td {

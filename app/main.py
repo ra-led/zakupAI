@@ -433,7 +433,7 @@ def search_suppliers(
             payload.hints,
         )
         queue_length = get_supplier_search_queue_length()
-        estimated_complete_time = datetime.utcnow() + timedelta(minutes=10 + queue_length * 10)
+        estimated_complete_time = datetime.utcnow() + timedelta(minutes=10 + queue_length * 10, hours=3)
         return SupplierSearchResponse(
             task_id=task.id or 0,
             status=task.status,

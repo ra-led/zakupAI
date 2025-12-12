@@ -63,7 +63,7 @@ const formatEstimatedCompletion = (dateString) => {
     return eta.toDateString() === tomorrow.toDateString();
   };
 
-  return `${isTomorrow() ? 'завтра ' : ''}${timeLabel}`;
+  return `${isTomorrow() ? 'завтра ' : ''}${timeLabel} МСК`;
 };
 
 function AuthPanel({ onAuth, busy }) {

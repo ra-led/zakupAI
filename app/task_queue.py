@@ -177,7 +177,9 @@ def get_supplier_search_state(purchase_id: int) -> Optional[SupplierSearchState]
         queue_length = get_supplier_search_queue_length(session)
         estimated_complete_time: Optional[datetime] = None
         if task.status in ("queued", "in_progress"):
-            estimated_complete_time = datetime.utcnow() + timedelta(minutes=10 + queue_length * 10)
+            estimated_complete_time = datetime.utcnow() + timedelta(
+                minutes=10 + queue_length * 10, hours=3
+            )
 
         return SupplierSearchState(
             task_id=task.id or 0,

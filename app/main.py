@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 from urllib.parse import urlparse
 
@@ -48,7 +48,11 @@ from .schemas import (
     UserRead,
 )
 from .supplier_import import load_contacts_from_files, merge_contacts
-from .task_queue import get_supplier_search_state, task_queue
+from .task_queue import (
+    get_supplier_search_queue_length,
+    get_supplier_search_state,
+    task_queue,
+)
 
 app = FastAPI(title="zakupAI service", version="0.1.0")
 
@@ -428,6 +432,8 @@ def search_suppliers(
             payload.terms_text or purchase.terms_text or "",
             payload.hints,
         )
+        queue_length = get_supplier_search_queue_length()
+        estimated_complete_time = datetime.utcnow() + timedelta(minutes=10 + queue_length * 10)
         return SupplierSearchResponse(
             task_id=task.id or 0,
             status=task.status,
@@ -436,6 +442,8 @@ def search_suppliers(
             tech_task_excerpt="",
             search_output=[],
             processed_contacts=[],
+            queue_length=queue_length,
+            estimated_complete_time=estimated_complete_time,
         )
 
     if state.status == "completed" and not state.queries:
@@ -448,6 +456,8 @@ def search_suppliers(
             tech_task_excerpt=state.tech_task_excerpt,
             search_output=state.search_output,
             processed_contacts=state.processed_contacts,
+            queue_length=state.queue_length,
+            estimated_complete_time=state.estimated_complete_time,
         )
 
     return SupplierSearchResponse(
@@ -458,6 +468,8 @@ def search_suppliers(
         tech_task_excerpt=state.tech_task_excerpt,
         search_output=state.search_output,
         processed_contacts=state.processed_contacts,
+        queue_length=state.queue_length,
+        estimated_complete_time=state.estimated_complete_time,
     )
 
 

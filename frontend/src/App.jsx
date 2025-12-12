@@ -51,6 +51,21 @@ const copyText = (text) => {
   }
 };
 
+const formatEstimatedCompletion = (dateString) => {
+  if (!dateString) return '';
+  const eta = new Date(dateString);
+  const now = new Date();
+
+  const timeLabel = eta.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const isTomorrow = () => {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    return eta.toDateString() === tomorrow.toDateString();
+  };
+
+  return `${isTomorrow() ? 'завтра ' : ''}${timeLabel}`;
+};
+
 function AuthPanel({ onAuth, busy }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
@@ -753,6 +768,11 @@ function App() {
                   <div className="tag" style={{ marginBottom: 8 }}>
                     Задача #{llmQueries.task_id}: {llmQueries.status}
                   </div>
+                  {llmQueries.estimated_complete_time && (
+                    <p className="muted" style={{ marginTop: 0 }}>
+                      Поиск будет завершен до {formatEstimatedCompletion(llmQueries.estimated_complete_time)}
+                    </p>
+                  )}
                   {llmQueries.tech_task_excerpt && (
                     <p className="muted">{llmQueries.tech_task_excerpt}</p>
                   )}

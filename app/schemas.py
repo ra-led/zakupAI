@@ -148,6 +148,8 @@ class SupplierSearchResponse(BaseModel):
     tech_task_excerpt: Optional[str] = None
     search_output: List["SearchOutputEntry"] = Field(default_factory=list)
     processed_contacts: List["ProcessedContact"] = Field(default_factory=list)
+    queue_length: int = 0
+    estimated_complete_time: Optional[datetime] = None
 
 
 class ProcessedContact(BaseModel):

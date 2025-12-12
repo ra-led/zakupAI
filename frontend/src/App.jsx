@@ -488,6 +488,14 @@ function App() {
     return <AuthPanel onAuth={handleAuth} busy={busy} />;
   }
 
+  const sortedPurchases = useMemo(() => {
+    return [...purchases].sort((a, b) => {
+      const nameA = a.full_name || a.custom_name || '';
+      const nameB = b.full_name || b.custom_name || '';
+      return nameA.localeCompare(nameB, 'ru', { sensitivity: 'base' });
+    });
+  }, [purchases]);
+
   const selectedPurchase = purchases.find((p) => p.id === selectedId);
   const purchaseHasLongText = (selectedPurchase?.terms_text || '').length > 420;
   const allSelectableRowIds = useMemo(() => {
@@ -539,7 +547,7 @@ function App() {
           {message && <div className="alert" style={{ background: '#ecfdf3', color: '#166534' }}>{message}</div>}
           {error && <div className="alert">{error}</div>}
           <div className="list">
-            {purchases.map((purchase) => (
+            {sortedPurchases.map((purchase) => (
               <PurchaseCard
                 key={purchase.id}
                 purchase={purchase}

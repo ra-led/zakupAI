@@ -230,7 +230,7 @@ function SupplierTable({
                             onClick={() => copyEmail(contact.email)}
                             title="Скопировать email"
                           >
-                            📋
+                            Копировать
                           </button>
                         </div>
                         {contact.is_selected_for_request && <span className="tag">Для рассылки</span>}

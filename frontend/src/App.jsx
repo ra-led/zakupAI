@@ -484,10 +484,6 @@ function App() {
     }
   };
 
-  if (!token) {
-    return <AuthPanel onAuth={handleAuth} busy={busy} />;
-  }
-
   const sortedPurchases = useMemo(() => {
     return [...purchases].sort((a, b) => {
       const nameA = a.full_name || a.custom_name || '';
@@ -495,6 +491,10 @@ function App() {
       return nameA.localeCompare(nameB, 'ru', { sensitivity: 'base' });
     });
   }, [purchases]);
+
+  if (!token) {
+    return <AuthPanel onAuth={handleAuth} busy={busy} />;
+  }
 
   const selectedPurchase = purchases.find((p) => p.id === selectedId);
   const purchaseHasLongText = (selectedPurchase?.terms_text || '').length > 420;

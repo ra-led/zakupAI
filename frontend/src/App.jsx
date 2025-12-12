@@ -26,6 +26,31 @@ async function apiFetch(path, { token, method = 'GET', body } = {}) {
   return response.json();
 }
 
+const fallbackCopy = (text) => {
+  if (typeof document === 'undefined') return;
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'absolute';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+  } catch (err) {
+    console.error('Не удалось скопировать текст', err);
+  }
+};
+
+const copyText = (text) => {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+};
+
 function AuthPanel({ onAuth, busy }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
@@ -147,30 +172,7 @@ function SupplierTable({
   const renderSupplierReason = (item) => item.reason || 'Комментарий не указан';
   const sourceLabel = (contact) => (contact.source_url ? 'Веб-поиск' : 'Добавлено вручную');
 
-  const fallbackCopy = (text) => {
-    if (typeof document === 'undefined') return;
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.setAttribute('readonly', '');
-      textarea.style.position = 'absolute';
-      textarea.style.left = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-    } catch (err) {
-      console.error('Не удалось скопировать текст', err);
-    }
-  };
-
-  const copyEmail = (email) => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(email).catch(() => fallbackCopy(email));
-    } else {
-      fallbackCopy(email);
-    }
-  };
+  const copyEmail = (email) => copyText(email);
 
   return (
     <div className="supplier-table-wrapper">
@@ -280,7 +282,6 @@ function App() {
     contacts: [makeBlankContact()],
   });
   const [showSupplierModal, setShowSupplierModal] = useState(false);
-  const [searchHints, setSearchHints] = useState('');
   const [llmQueries, setLlmQueries] = useState(null);
   const [emailDraft, setEmailDraft] = useState(null);
   const [purchaseDetailsExpanded, setPurchaseDetailsExpanded] = useState(false);
@@ -419,28 +420,6 @@ function App() {
       setMessage('Поставщик добавлен');
       await loadSuppliers(selectedId);
       setShowSupplierModal(false);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const runSearch = async (evt) => {
-    evt.preventDefault();
-    if (!selectedId) return;
-    setBusy(true);
-    setError('');
-    try {
-      const selectedPurchase = purchases.find((p) => p.id === selectedId);
-      const result = await apiWithToken(`/purchases/${selectedId}/suppliers/search`, {
-        method: 'POST',
-        body: {
-          terms_text: selectedPurchase?.terms_text || '',
-          hints: searchHints.split(/[\,\n]/).map((v) => v.trim()).filter(Boolean),
-        },
-      });
-      setLlmQueries(result);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -725,29 +704,10 @@ function App() {
             )}
 
             <div className="card">
-              <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0 }}>Подготовка</h3>
-                <button className="secondary" onClick={buildDraft} disabled={busy}>
-                  Сгенерировать письмо
-                </button>
-              </div>
+              <h3 style={{ marginTop: 0 }}>Автопоиск поставщиков</h3>
 
-              <form onSubmit={runSearch} style={{ marginBottom: 18 }}>
-                <label>Подсказки для поиска поставщиков</label>
-                <textarea
-                  rows={2}
-                  value={searchHints}
-                  onChange={(e) => setSearchHints(e.target.value)}
-                  placeholder="Введите ключевые слова, бренды или города"
-                />
-                <button type="submit" className="primary" disabled={busy}>
-                  Построить план поиска
-                </button>
-              </form>
-
-              {llmQueries && (
-                <div className="card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <h4 style={{ marginTop: 0 }}>Автопоиск поставщиков</h4>
+              {llmQueries ? (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: 14, borderRadius: 10 }}>
                   <div className="tag" style={{ marginBottom: 8 }}>
                     Задача #{llmQueries.task_id}: {llmQueries.status}
                   </div>
@@ -765,14 +725,45 @@ function App() {
                   )}
                   <p className="muted">{llmQueries.note}</p>
                 </div>
+              ) : (
+                <p className="muted">Поиск поставщиков запускается автоматически на основе описания закупки.</p>
               )}
+            </div>
 
-              {emailDraft && (
-                <div className="card" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
-                  <h4 style={{ marginTop: 0 }}>Черновик письма</h4>
-                  <div className="tag">{emailDraft.subject}</div>
+            <div className="card">
+              <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0 }}>Письмо</h3>
+                <button className="secondary" onClick={buildDraft} disabled={busy}>
+                  Сгенерировать текст письма
+                </button>
+              </div>
+
+              {emailDraft ? (
+                <>
+                  <div
+                    className="stack"
+                    style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 12, gap: 12 }}
+                  >
+                    <div className="tag" aria-label="Тема письма">
+                      {emailDraft.subject}
+                    </div>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() =>
+                        copyText(`Тема: ${emailDraft.subject}\n\n${emailDraft.body}`)
+                      }
+                      title="Скопировать текст письма"
+                    >
+                      Скопировать текст
+                    </button>
+                  </div>
                   <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{emailDraft.body}</pre>
-                </div>
+                </>
+              ) : (
+                <p className="muted" style={{ marginTop: 12 }}>
+                  Сгенерируйте текст письма, чтобы получить готовый шаблон для отправки поставщикам.
+                </p>
               )}
             </div>
           </>

@@ -412,6 +412,7 @@ function App() {
     localStorage.removeItem('zakupai_token');
     localStorage.removeItem('zakupai_user');
     setToken('');
+    setUserEmail('');
     setPurchases([]);
     setSuppliers([]);
     setContactsBySupplier({});
@@ -492,10 +493,6 @@ function App() {
     });
   }, [purchases]);
 
-  if (!token) {
-    return <AuthPanel onAuth={handleAuth} busy={busy} />;
-  }
-
   const selectedPurchase = purchases.find((p) => p.id === selectedId);
   const purchaseHasLongText = (selectedPurchase?.terms_text || '').length > 420;
   const allSelectableRowIds = useMemo(() => {
@@ -528,7 +525,7 @@ function App() {
     });
   };
 
-  return (
+  return token ? (
     <div className="app-shell">
       <aside className="sidebar">
         <h1>zakupAI</h1>
@@ -840,6 +837,8 @@ function App() {
         )}
       </main>
     </div>
+  ) : (
+    <AuthPanel onAuth={handleAuth} busy={busy} />
   );
 }
 

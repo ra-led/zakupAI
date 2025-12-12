@@ -348,6 +348,34 @@ function App() {
     }
   };
 
+  const exportSuppliers = async () => {
+    if (!selectedId || suppliers.length === 0) return;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch(`${API_URL}/purchases/${selectedId}/suppliers/export`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Не удалось экспортировать контакты');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `purchase_${selectedId}_suppliers.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedId && token) {
       loadSuppliers(selectedId);
@@ -456,6 +484,7 @@ function App() {
   }, [suppliers, contactsBySupplier]);
 
   const allSelected = allSelectableRowIds.length > 0 && allSelectableRowIds.every((id) => selectedRows.has(id));
+  const hasSuppliers = suppliers.length > 0;
 
   const toggleRow = (rowId) => {
     setSelectedRows((prev) => {
@@ -593,9 +622,22 @@ function App() {
             <div className="card">
               <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
                 <h3 style={{ margin: 0 }}>Поставщики</h3>
-                <button className="secondary" onClick={() => loadSuppliers(selectedPurchase.id)} disabled={busy}>
-                  Обновить
-                </button>
+                <div className="stack" style={{ alignItems: 'center', gap: 8 }}>
+                  {hasSuppliers && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      style={{ background: '#21a366', borderColor: '#21a366', color: '#fff' }}
+                      onClick={exportSuppliers}
+                      disabled={busy}
+                    >
+                      Экспорт в Excel
+                    </button>
+                  )}
+                  <button className="secondary" onClick={() => loadSuppliers(selectedPurchase.id)} disabled={busy}>
+                    Обновить
+                  </button>
+                </div>
               </div>
               <SupplierTable
                 suppliers={suppliers}

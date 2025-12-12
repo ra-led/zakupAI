@@ -7,6 +7,11 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
 
+from io import BytesIO
+
+import pandas as pd
+from fastapi.responses import StreamingResponse
+
 from . import auth
 from .database import create_db_and_tables, get_session
 from .llm_stub import build_search_queries, generate_email_body
@@ -211,6 +216,69 @@ def list_suppliers(purchase_id: int, session=Depends(get_session), current_user:
     if not purchase or purchase.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
     return session.exec(select(Supplier).where(Supplier.purchase_id == purchase_id)).all()
+
+
+@app.get(
+    "/purchases/{purchase_id}/suppliers/export",
+    response_class=StreamingResponse,
+)
+def export_suppliers_excel(
+    purchase_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+):
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    suppliers = session.exec(select(Supplier).where(Supplier.purchase_id == purchase_id)).all()
+
+    rows = []
+    for supplier in suppliers:
+        contacts = session.exec(select(SupplierContact).where(SupplierContact.supplier_id == supplier.id)).all()
+        supplier_name = supplier.company_name or supplier.website_url or "Без названия"
+        reason = supplier.reason or ""
+        if contacts:
+            for contact in contacts:
+                rows.append(
+                    {
+                        "Поставщик": supplier_name,
+                        "Сайт": supplier.website_url or "",
+                        "Email": contact.email,
+                        "Источник": contact.source_url or "Добавлено вручную",
+                        "Комментарий": contact.reason or reason,
+                        "Для рассылки": "Да" if contact.is_selected_for_request else "Нет",
+                    }
+                )
+        else:
+            rows.append(
+                {
+                    "Поставщик": supplier_name,
+                    "Сайт": supplier.website_url or "",
+                    "Email": "",
+                    "Источник": "",
+                    "Комментарий": reason,
+                    "Для рассылки": "Нет",
+                }
+            )
+
+    columns = ["Поставщик", "Сайт", "Email", "Источник", "Комментарий", "Для рассылки"]
+    df = pd.DataFrame(rows, columns=columns)
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Контакты")
+    output.seek(0)
+
+    filename = f"purchase_{purchase_id}_suppliers.xlsx"
+    headers = {
+        "Content-Disposition": f"attachment; filename=\"{filename}\"",
+    }
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 
 @app.post(

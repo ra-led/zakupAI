@@ -147,6 +147,31 @@ function SupplierTable({
   const renderSupplierReason = (item) => item.reason || 'Комментарий не указан';
   const sourceLabel = (contact) => (contact.source_url ? 'Веб-поиск' : 'Добавлено вручную');
 
+  const fallbackCopy = (text) => {
+    if (typeof document === 'undefined') return;
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'absolute';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    } catch (err) {
+      console.error('Не удалось скопировать текст', err);
+    }
+  };
+
+  const copyEmail = (email) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(email).catch(() => fallbackCopy(email));
+    } else {
+      fallbackCopy(email);
+    }
+  };
+
   return (
     <div className="supplier-table-wrapper">
       <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -202,7 +227,8 @@ function SupplierTable({
                             type="button"
                             className="copy-btn"
                             aria-label="Скопировать email"
-                            onClick={() => navigator.clipboard.writeText(contact.email)}
+                            onClick={() => copyEmail(contact.email)}
+                            title="Скопировать email"
                           >
                             📋
                           </button>

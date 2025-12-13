@@ -26,6 +26,46 @@ async function apiFetch(path, { token, method = 'GET', body } = {}) {
   return response.json();
 }
 
+const fallbackCopy = (text) => {
+  if (typeof document === 'undefined') return;
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'absolute';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+  } catch (err) {
+    console.error('Не удалось скопировать текст', err);
+  }
+};
+
+const copyText = (text) => {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+};
+
+const formatEstimatedCompletion = (dateString) => {
+  if (!dateString) return '';
+  const eta = new Date(dateString);
+  const now = new Date();
+
+  const timeLabel = eta.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const isTomorrow = () => {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    return eta.toDateString() === tomorrow.toDateString();
+  };
+
+  return `${isTomorrow() ? 'завтра ' : ''}${timeLabel} МСК`;
+};
+
 function AuthPanel({ onAuth, busy }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
@@ -147,6 +187,8 @@ function SupplierTable({
   const renderSupplierReason = (item) => item.reason || 'Комментарий не указан';
   const sourceLabel = (contact) => (contact.source_url ? 'Веб-поиск' : 'Добавлено вручную');
 
+  const copyEmail = (email) => copyText(email);
+
   return (
     <div className="supplier-table-wrapper">
       <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -202,9 +244,10 @@ function SupplierTable({
                             type="button"
                             className="copy-btn"
                             aria-label="Скопировать email"
-                            onClick={() => navigator.clipboard.writeText(contact.email)}
+                            onClick={() => copyEmail(contact.email)}
+                            title="Скопировать email"
                           >
-                            📋
+                            Копировать
                           </button>
                         </div>
                         {contact.is_selected_for_request && <span className="tag">Для рассылки</span>}
@@ -254,7 +297,6 @@ function App() {
     contacts: [makeBlankContact()],
   });
   const [showSupplierModal, setShowSupplierModal] = useState(false);
-  const [searchHints, setSearchHints] = useState('');
   const [llmQueries, setLlmQueries] = useState(null);
   const [emailDraft, setEmailDraft] = useState(null);
   const [purchaseDetailsExpanded, setPurchaseDetailsExpanded] = useState(false);
@@ -321,6 +363,34 @@ function App() {
     }
   };
 
+  const exportSuppliers = async () => {
+    if (!selectedId || suppliers.length === 0) return;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch(`${API_URL}/purchases/${selectedId}/suppliers/export`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Не удалось экспортировать контакты');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `purchase_${selectedId}_suppliers.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedId && token) {
       loadSuppliers(selectedId);
@@ -342,6 +412,7 @@ function App() {
     localStorage.removeItem('zakupai_token');
     localStorage.removeItem('zakupai_user');
     setToken('');
+    setUserEmail('');
     setPurchases([]);
     setSuppliers([]);
     setContactsBySupplier({});
@@ -400,28 +471,6 @@ function App() {
     }
   };
 
-  const runSearch = async (evt) => {
-    evt.preventDefault();
-    if (!selectedId) return;
-    setBusy(true);
-    setError('');
-    try {
-      const selectedPurchase = purchases.find((p) => p.id === selectedId);
-      const result = await apiWithToken(`/purchases/${selectedId}/suppliers/search`, {
-        method: 'POST',
-        body: {
-          terms_text: selectedPurchase?.terms_text || '',
-          hints: searchHints.split(/[\,\n]/).map((v) => v.trim()).filter(Boolean),
-        },
-      });
-      setLlmQueries(result);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const buildDraft = async () => {
     if (!selectedId) return;
     setBusy(true);
@@ -436,9 +485,13 @@ function App() {
     }
   };
 
-  if (!token) {
-    return <AuthPanel onAuth={handleAuth} busy={busy} />;
-  }
+  const sortedPurchases = useMemo(() => {
+    return [...purchases].sort((a, b) => {
+      const nameA = a.full_name || a.custom_name || '';
+      const nameB = b.full_name || b.custom_name || '';
+      return nameA.localeCompare(nameB, 'ru', { sensitivity: 'base' });
+    });
+  }, [purchases]);
 
   const selectedPurchase = purchases.find((p) => p.id === selectedId);
   const purchaseHasLongText = (selectedPurchase?.terms_text || '').length > 420;
@@ -451,6 +504,7 @@ function App() {
   }, [suppliers, contactsBySupplier]);
 
   const allSelected = allSelectableRowIds.length > 0 && allSelectableRowIds.every((id) => selectedRows.has(id));
+  const hasSuppliers = suppliers.length > 0;
 
   const toggleRow = (rowId) => {
     setSelectedRows((prev) => {
@@ -471,7 +525,7 @@ function App() {
     });
   };
 
-  return (
+  return token ? (
     <div className="app-shell">
       <aside className="sidebar">
         <h1>zakupAI</h1>
@@ -490,7 +544,7 @@ function App() {
           {message && <div className="alert" style={{ background: '#ecfdf3', color: '#166534' }}>{message}</div>}
           {error && <div className="alert">{error}</div>}
           <div className="list">
-            {purchases.map((purchase) => (
+            {sortedPurchases.map((purchase) => (
               <PurchaseCard
                 key={purchase.id}
                 purchase={purchase}
@@ -588,9 +642,22 @@ function App() {
             <div className="card">
               <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
                 <h3 style={{ margin: 0 }}>Поставщики</h3>
-                <button className="secondary" onClick={() => loadSuppliers(selectedPurchase.id)} disabled={busy}>
-                  Обновить
-                </button>
+                <div className="stack" style={{ alignItems: 'center', gap: 8 }}>
+                  {hasSuppliers && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      style={{ background: '#21a366', borderColor: '#21a366', color: '#fff' }}
+                      onClick={exportSuppliers}
+                      disabled={busy}
+                    >
+                      Экспорт в Excel
+                    </button>
+                  )}
+                  <button className="secondary" onClick={() => loadSuppliers(selectedPurchase.id)} disabled={busy}>
+                    Обновить
+                  </button>
+                </div>
               </div>
               <SupplierTable
                 suppliers={suppliers}
@@ -699,32 +766,18 @@ function App() {
             )}
 
             <div className="card">
-              <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0 }}>Подготовка</h3>
-                <button className="secondary" onClick={buildDraft} disabled={busy}>
-                  Сгенерировать письмо
-                </button>
-              </div>
+              <h3 style={{ marginTop: 0 }}>Автопоиск поставщиков</h3>
 
-              <form onSubmit={runSearch} style={{ marginBottom: 18 }}>
-                <label>Подсказки для поиска поставщиков</label>
-                <textarea
-                  rows={2}
-                  value={searchHints}
-                  onChange={(e) => setSearchHints(e.target.value)}
-                  placeholder="Введите ключевые слова, бренды или города"
-                />
-                <button type="submit" className="primary" disabled={busy}>
-                  Построить план поиска
-                </button>
-              </form>
-
-              {llmQueries && (
-                <div className="card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <h4 style={{ marginTop: 0 }}>Автопоиск поставщиков</h4>
+              {llmQueries ? (
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: 14, borderRadius: 10 }}>
                   <div className="tag" style={{ marginBottom: 8 }}>
                     Задача #{llmQueries.task_id}: {llmQueries.status}
                   </div>
+                  {llmQueries.estimated_complete_time && (
+                    <p className="muted" style={{ marginTop: 0 }}>
+                      Поиск будет завершен до {formatEstimatedCompletion(llmQueries.estimated_complete_time)}
+                    </p>
+                  )}
                   {llmQueries.tech_task_excerpt && (
                     <p className="muted">{llmQueries.tech_task_excerpt}</p>
                   )}
@@ -739,20 +792,53 @@ function App() {
                   )}
                   <p className="muted">{llmQueries.note}</p>
                 </div>
+              ) : (
+                <p className="muted">Поиск поставщиков запускается автоматически на основе описания закупки.</p>
               )}
+            </div>
 
-              {emailDraft && (
-                <div className="card" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
-                  <h4 style={{ marginTop: 0 }}>Черновик письма</h4>
-                  <div className="tag">{emailDraft.subject}</div>
+            <div className="card">
+              <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0 }}>Письмо</h3>
+                <button className="secondary" onClick={buildDraft} disabled={busy}>
+                  Сгенерировать текст письма
+                </button>
+              </div>
+
+              {emailDraft ? (
+                <>
+                  <div
+                    className="stack"
+                    style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 12, gap: 12 }}
+                  >
+                    <div className="tag" aria-label="Тема письма">
+                      {emailDraft.subject}
+                    </div>
+                    <button
+                      type="button"
+                      className="copy-btn"
+                      onClick={() =>
+                        copyText(`Тема: ${emailDraft.subject}\n\n${emailDraft.body}`)
+                      }
+                      title="Скопировать текст письма"
+                    >
+                      Скопировать текст
+                    </button>
+                  </div>
                   <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{emailDraft.body}</pre>
-                </div>
+                </>
+              ) : (
+                <p className="muted" style={{ marginTop: 12 }}>
+                  Сгенерируйте текст письма, чтобы получить готовый шаблон для отправки поставщикам.
+                </p>
               )}
             </div>
           </>
         )}
       </main>
     </div>
+  ) : (
+    <AuthPanel onAuth={handleAuth} busy={busy} />
   );
 }
 

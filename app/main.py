@@ -1,11 +1,16 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
+
+from io import BytesIO
+
+import pandas as pd
+from fastapi.responses import StreamingResponse
 
 from . import auth
 from .database import create_db_and_tables, get_session
@@ -43,7 +48,11 @@ from .schemas import (
     UserRead,
 )
 from .supplier_import import load_contacts_from_files, merge_contacts
-from .task_queue import get_supplier_search_state, task_queue
+from .task_queue import (
+    get_supplier_search_queue_length,
+    get_supplier_search_state,
+    task_queue,
+)
 
 app = FastAPI(title="zakupAI service", version="0.1.0")
 
@@ -213,6 +222,69 @@ def list_suppliers(purchase_id: int, session=Depends(get_session), current_user:
     return session.exec(select(Supplier).where(Supplier.purchase_id == purchase_id)).all()
 
 
+@app.get(
+    "/purchases/{purchase_id}/suppliers/export",
+    response_class=StreamingResponse,
+)
+def export_suppliers_excel(
+    purchase_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+):
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    suppliers = session.exec(select(Supplier).where(Supplier.purchase_id == purchase_id)).all()
+
+    rows = []
+    for supplier in suppliers:
+        contacts = session.exec(select(SupplierContact).where(SupplierContact.supplier_id == supplier.id)).all()
+        supplier_name = supplier.company_name or supplier.website_url or "Без названия"
+        reason = supplier.reason or ""
+        if contacts:
+            for contact in contacts:
+                rows.append(
+                    {
+                        "Поставщик": supplier_name,
+                        "Сайт": supplier.website_url or "",
+                        "Email": contact.email,
+                        "Источник": contact.source_url or "Добавлено вручную",
+                        "Комментарий": contact.reason or reason,
+                        "Для рассылки": "Да" if contact.is_selected_for_request else "Нет",
+                    }
+                )
+        else:
+            rows.append(
+                {
+                    "Поставщик": supplier_name,
+                    "Сайт": supplier.website_url or "",
+                    "Email": "",
+                    "Источник": "",
+                    "Комментарий": reason,
+                    "Для рассылки": "Нет",
+                }
+            )
+
+    columns = ["Поставщик", "Сайт", "Email", "Источник", "Комментарий", "Для рассылки"]
+    df = pd.DataFrame(rows, columns=columns)
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Контакты")
+    output.seek(0)
+
+    filename = f"purchase_{purchase_id}_suppliers.xlsx"
+    headers = {
+        "Content-Disposition": f"attachment; filename=\"{filename}\"",
+    }
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
 @app.post(
     "/purchases/{purchase_id}/suppliers/{supplier_id}/contacts",
     response_model=SupplierContactRead,
@@ -360,6 +432,8 @@ def search_suppliers(
             payload.terms_text or purchase.terms_text or "",
             payload.hints,
         )
+        queue_length = get_supplier_search_queue_length()
+        estimated_complete_time = datetime.utcnow() + timedelta(minutes=10 + queue_length * 10, hours=3)
         return SupplierSearchResponse(
             task_id=task.id or 0,
             status=task.status,
@@ -368,6 +442,8 @@ def search_suppliers(
             tech_task_excerpt="",
             search_output=[],
             processed_contacts=[],
+            queue_length=queue_length,
+            estimated_complete_time=estimated_complete_time,
         )
 
     if state.status == "completed" and not state.queries:
@@ -380,6 +456,8 @@ def search_suppliers(
             tech_task_excerpt=state.tech_task_excerpt,
             search_output=state.search_output,
             processed_contacts=state.processed_contacts,
+            queue_length=state.queue_length,
+            estimated_complete_time=state.estimated_complete_time,
         )
 
     return SupplierSearchResponse(
@@ -390,6 +468,8 @@ def search_suppliers(
         tech_task_excerpt=state.tech_task_excerpt,
         search_output=state.search_output,
         processed_contacts=state.processed_contacts,
+        queue_length=state.queue_length,
+        estimated_complete_time=state.estimated_complete_time,
     )
 
 

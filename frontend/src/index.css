@@ -294,17 +294,20 @@ button.secondary {
 }
 
 .copy-btn {
-  border: none;
-  background: none;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
   cursor: pointer;
-  padding: 4px;
-  border-radius: 6px;
-  font-size: 14px;
-  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 400;
+  color: #0f172a;
 }
 
 .copy-btn:hover {
   background: #e2e8f0;
+  border-color: #cbd5e1;
 }
 
 .add-supplier-row td {

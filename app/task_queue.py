@@ -2,6 +2,7 @@ import json
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select
@@ -20,6 +21,8 @@ class SupplierSearchState:
     tech_task_excerpt: str
     search_output: List[Dict[str, Any]]
     processed_contacts: List[Dict[str, Any]]
+    queue_length: int = 0
+    estimated_complete_time: Optional[datetime] = None
 
 
 class TaskQueue:
@@ -171,6 +174,13 @@ def get_supplier_search_state(purchase_id: int) -> Optional[SupplierSearchState]
             search_output = payload.get("search_output") or []
             processed_contacts = payload.get("processed_contacts") or []
 
+        queue_length = get_supplier_search_queue_length(session)
+        estimated_complete_time: Optional[datetime] = None
+        if task.status in ("queued", "in_progress"):
+            estimated_complete_time = datetime.utcnow() + timedelta(
+                minutes=10 + queue_length * 10, hours=3
+            )
+
         return SupplierSearchState(
             task_id=task.id or 0,
             status=task.status,
@@ -179,7 +189,25 @@ def get_supplier_search_state(purchase_id: int) -> Optional[SupplierSearchState]
             tech_task_excerpt=tech_task_excerpt,
             search_output=search_output,
             processed_contacts=processed_contacts,
+            queue_length=queue_length,
+            estimated_complete_time=estimated_complete_time,
         )
+
+
+def get_supplier_search_queue_length(session: Optional[Session] = None) -> int:
+    if session is None:
+        with Session(engine) as managed_session:
+            queued_tasks = managed_session.exec(
+                select(LLMTask).where(
+                    LLMTask.task_type == "supplier_search", LLMTask.status == "queued"
+                )
+            ).all()
+            return len(queued_tasks)
+
+    queued_tasks = session.exec(
+        select(LLMTask).where(LLMTask.task_type == "supplier_search", LLMTask.status == "queued")
+    ).all()
+    return len(queued_tasks)
 
 
 task_queue = TaskQueue()

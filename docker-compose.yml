@@ -57,8 +57,12 @@ services:
       - backend
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./tender-gpt.ru.crt:/etc/ssl/tender-gpt.ru.crt:ro
+      - ./tender-gpt.ru.key:/etc/ssl/tender-gpt.ru.key:ro
+      - ./ca.crt:/etc/ssl/ca.crt:ro
 
 volumes:
   db_data:

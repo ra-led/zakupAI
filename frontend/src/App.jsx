@@ -3,6 +3,9 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' ? `${window.location.origin}/api` : 'http://localhost:8000');
+const DOC_TO_MD_URL =
+  import.meta.env.VITE_DOC_TO_MD_URL ||
+  (typeof window !== 'undefined' ? `${window.location.origin}/doc-to-md` : 'http://localhost:8001');
 
 async function apiFetch(path, { token, method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -24,6 +27,27 @@ async function apiFetch(path, { token, method = 'GET', body } = {}) {
   }
   if (response.status === 204) return null;
   return response.json();
+}
+
+async function convertTechTaskFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await fetch(`${DOC_TO_MD_URL}/convert`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    let errorText = 'Не удалось конвертировать файл';
+    try {
+      const parsed = await response.json();
+      errorText = parsed.detail || JSON.stringify(parsed);
+    } catch (err) {
+      errorText = await response.text();
+    }
+    throw new Error(errorText || `${response.status}`);
+  }
+  const result = await response.json();
+  return result.markdown || '';
 }
 
 const fallbackCopy = (text) => {
@@ -288,6 +312,7 @@ function App() {
   const [error, setError] = useState('');
 
   const [purchaseForm, setPurchaseForm] = useState({ custom_name: '', terms_text: '' });
+  const [purchaseFile, setPurchaseFile] = useState(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const makeBlankContact = () => ({ email: '' });
   const [supplierForm, setSupplierForm] = useState({
@@ -425,8 +450,23 @@ function App() {
     setError('');
     setMessage('');
     try {
-      await apiWithToken('/purchases', { method: 'POST', body: purchaseForm });
+      let termsText = purchaseForm.terms_text?.trim() || '';
+      if (purchaseFile) {
+        termsText = await convertTechTaskFile(purchaseFile);
+      }
+      if (!termsText) {
+        setError('Добавьте описание или загрузите файл ТЗ.');
+        return;
+      }
+      await apiWithToken('/purchases', {
+        method: 'POST',
+        body: {
+          custom_name: purchaseForm.custom_name,
+          terms_text: termsText,
+        },
+      });
       setPurchaseForm({ custom_name: '', terms_text: '' });
+      setPurchaseFile(null);
       setMessage('Закупка создана');
       await loadPurchases();
       setShowPurchaseModal(false);
@@ -593,8 +633,17 @@ function App() {
                   value={purchaseForm.terms_text}
                   onChange={(e) => setPurchaseForm((f) => ({ ...f, terms_text: e.target.value }))}
                   placeholder="Кратко опишите предмет закупки"
-                  required
+                  required={!purchaseFile}
                 />
+                <label>Файл ТЗ (pdf, xlsx, doc, docx, rtf, txt)</label>
+                <input
+                  type="file"
+                  accept=".pdf,.xlsx,.doc,.docx,.rtf,.txt"
+                  onChange={(e) => setPurchaseFile(e.target.files?.[0] || null)}
+                />
+                <div className="muted" style={{ fontSize: 12 }}>
+                  Если файл загружен, описание будет сформировано автоматически на основе документа.
+                </div>
                 <div className="stack" style={{ justifyContent: 'flex-end', marginTop: 6 }}>
                   <button type="button" className="secondary" onClick={() => setShowPurchaseModal(false)} disabled={busy}>
                     Отмена

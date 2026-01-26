@@ -34,6 +34,7 @@ from .schemas import (
     EmailMessageRead,
     LLMTaskCreate,
     LLMTaskRead,
+    LotCreate,
     LotsResponse,
     LotRead,
     LotParameterRead,
@@ -254,6 +255,43 @@ def get_purchase_lots(
 
     status_value = task.status if task else ("completed" if lots else "queued")
     return LotsResponse(status=status_value, lots=lots)
+
+
+@app.post("/purchases/{purchase_id}/lots", response_model=LotRead, status_code=status.HTTP_201_CREATED)
+def create_purchase_lot(
+    purchase_id: int,
+    payload: LotCreate,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> LotRead:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    lot = Lot(purchase_id=purchase_id, name=payload.name)
+    session.add(lot)
+    session.commit()
+    session.refresh(lot)
+
+    for param in payload.parameters:
+        session.add(
+            LotParameter(
+                lot_id=lot.id,
+                name=param.name,
+                value=param.value,
+                units=param.units or "",
+            )
+        )
+    session.commit()
+
+    params = session.exec(select(LotParameter).where(LotParameter.lot_id == lot.id)).all()
+    return LotRead(
+        id=lot.id or 0,
+        name=lot.name,
+        parameters=[
+            LotParameterRead(name=param.name, value=param.value, units=param.units) for param in params
+        ],
+    )
 
 
 @app.post("/purchases/{purchase_id}/suppliers", response_model=SupplierRead, status_code=status.HTTP_201_CREATED)

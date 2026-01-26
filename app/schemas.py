@@ -190,10 +190,21 @@ class LotParameterRead(BaseModel):
     units: str
 
 
+class LotParameterCreate(BaseModel):
+    name: str
+    value: str
+    units: str = ""
+
+
 class LotRead(BaseModel):
     id: int
     name: str
     parameters: List[LotParameterRead] = Field(default_factory=list)
+
+
+class LotCreate(BaseModel):
+    name: str
+    parameters: List[LotParameterCreate] = Field(default_factory=list)
 
 
 class LotsResponse(BaseModel):

@@ -84,3 +84,18 @@ class LLMTask(SQLModel, table=True):
     output_text: Optional[str] = None
     status: str = Field(default="queued")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Lot(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    purchase_id: int = Field(foreign_key="purchase.id")
+    name: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class LotParameter(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    lot_id: int = Field(foreign_key="lot.id")
+    name: str
+    value: str
+    units: str

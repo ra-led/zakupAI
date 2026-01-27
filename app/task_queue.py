@@ -8,8 +8,9 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from .database import engine
+from .llm_openai import extract_lots
 from .llm_stub import build_search_queries
-from .models import LLMTask, Purchase
+from .models import LLMTask, Lot, LotParameter, Purchase
 
 
 @dataclass
@@ -73,6 +74,66 @@ class TaskQueue:
             session.refresh(task)
             return task
 
+    def enqueue_lots_extraction_task(self, purchase_id: int, terms_text: str) -> LLMTask:
+        payload = {"terms_text": terms_text or ""}
+        with Session(engine) as session:
+            existing = session.exec(
+                select(LLMTask)
+                .where(
+                    LLMTask.purchase_id == purchase_id,
+                    LLMTask.task_type == "lots_extraction",
+                    LLMTask.status.in_(["queued", "in_progress"]),
+                )
+                .order_by(LLMTask.created_at.desc())
+            ).first()
+            if existing:
+                return existing
+
+            task = LLMTask(
+                purchase_id=purchase_id,
+                task_type="lots_extraction",
+                input_text=json.dumps(payload, ensure_ascii=False),
+                status="queued",
+            )
+            session.add(task)
+            session.commit()
+            session.refresh(task)
+            return task
+
+    def run_lots_extraction_now(self, purchase_id: int, terms_text: str) -> LLMTask:
+        payload = {"terms_text": terms_text or ""}
+        with Session(engine) as session:
+            task = LLMTask(
+                purchase_id=purchase_id,
+                task_type="lots_extraction",
+                input_text=json.dumps(payload, ensure_ascii=False),
+                status="in_progress",
+            )
+            session.add(task)
+            session.commit()
+            session.refresh(task)
+            task_id = task.id
+
+        if task_id is None:
+            raise RuntimeError("Failed to create lots extraction task")
+
+        try:
+            self._process_task(task_id)
+        except Exception as exc:
+            print(f"[lots_extraction] failed for purchase {purchase_id}: {exc}")
+            with Session(engine) as session:
+                errored = session.get(LLMTask, task_id)
+                if errored:
+                    errored.status = "failed"
+                    errored.output_text = json.dumps({"error": str(exc)}, ensure_ascii=False)
+                    session.add(errored)
+                    session.commit()
+        with Session(engine) as session:
+            refreshed = session.get(LLMTask, task_id)
+            if not refreshed:
+                raise RuntimeError("Lots extraction task disappeared")
+            return refreshed
+
     def _run(self) -> None:
         while not self._stop_event.is_set():
             with Session(engine) as session:
@@ -130,10 +191,53 @@ class TaskQueue:
                     if purchase:
                         purchase.status = "suppliers_found"
                         session.add(purchase)
+            elif task.task_type == "lots_extraction":
+                payload = self._load_payload(task.input_text)
+                terms_text = payload.get("terms_text", "")
+                print(f"[lots_extraction] start task={task.id} purchase={task.purchase_id}")
+                if not terms_text:
+                    task.output_text = json.dumps({"lots": []}, ensure_ascii=False)
+                    task.status = "completed"
+                    session.add(task)
+                    session.commit()
+                    return
+
+                lots_payload = extract_lots(terms_text)
+                task.output_text = json.dumps(lots_payload, ensure_ascii=False)
+                task.status = "completed"
+                if task.purchase_id:
+                    self._sync_lots(session, task.purchase_id, lots_payload)
+                print(f"[lots_extraction] completed task={task.id} purchase={task.purchase_id}")
             else:
                 task.status = "completed"
 
             session.add(task)
+            session.commit()
+
+    @staticmethod
+    def _sync_lots(session: Session, purchase_id: int, payload: Dict[str, Any]) -> None:
+        lots_payload = payload.get("lots") or []
+        existing_lots = session.exec(select(Lot).where(Lot.purchase_id == purchase_id)).all()
+        for lot in existing_lots:
+            parameters = session.exec(select(LotParameter).where(LotParameter.lot_id == lot.id)).all()
+            for param in parameters:
+                session.delete(param)
+            session.delete(lot)
+        session.commit()
+
+        for lot_item in lots_payload:
+            lot = Lot(purchase_id=purchase_id, name=lot_item.get("name", "Лот"))
+            session.add(lot)
+            session.commit()
+            session.refresh(lot)
+            for param in lot_item.get("parameters") or []:
+                parameter = LotParameter(
+                    lot_id=lot.id,
+                    name=param.get("name", ""),
+                    value=param.get("value", ""),
+                    units=param.get("units", ""),
+                )
+                session.add(parameter)
             session.commit()
 
     @staticmethod

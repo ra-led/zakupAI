@@ -3,6 +3,9 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (typeof window !== 'undefined' ? `${window.location.origin}/api` : 'http://localhost:8000');
+const DOC_TO_MD_URL =
+  import.meta.env.VITE_DOC_TO_MD_URL ||
+  (typeof window !== 'undefined' ? `${window.location.origin}/doc-to-md` : 'http://localhost:8001');
 
 async function apiFetch(path, { token, method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -24,6 +27,27 @@ async function apiFetch(path, { token, method = 'GET', body } = {}) {
   }
   if (response.status === 204) return null;
   return response.json();
+}
+
+async function convertTechTaskFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await fetch(`${DOC_TO_MD_URL}/convert`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!response.ok) {
+    let errorText = 'Не удалось конвертировать файл';
+    try {
+      const parsed = await response.json();
+      errorText = parsed.detail || JSON.stringify(parsed);
+    } catch (err) {
+      errorText = await response.text();
+    }
+    throw new Error(errorText || `${response.status}`);
+  }
+  const result = await response.json();
+  return result.markdown || '';
 }
 
 const fallbackCopy = (text) => {
@@ -288,6 +312,7 @@ function App() {
   const [error, setError] = useState('');
 
   const [purchaseForm, setPurchaseForm] = useState({ custom_name: '', terms_text: '' });
+  const [purchaseFile, setPurchaseFile] = useState(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const makeBlankContact = () => ({ email: '' });
   const [supplierForm, setSupplierForm] = useState({
@@ -301,6 +326,11 @@ function App() {
   const [emailDraft, setEmailDraft] = useState(null);
   const [purchaseDetailsExpanded, setPurchaseDetailsExpanded] = useState(false);
   const [selectedRows, setSelectedRows] = useState(new Set());
+  const [lotsState, setLotsState] = useState({ status: 'queued', lots: [] });
+  const [activeLot, setActiveLot] = useState(null);
+  const [showLotModal, setShowLotModal] = useState(false);
+  const [showCreateLotModal, setShowCreateLotModal] = useState(false);
+  const [newLotForm, setNewLotForm] = useState({ name: '', parameters: [{ name: '', value: '', units: '' }] });
 
   useEffect(() => {
     if (token) {
@@ -397,6 +427,26 @@ function App() {
       setEmailDraft(null);
       setLlmQueries(null);
       setPurchaseDetailsExpanded(false);
+      setLotsState({ status: 'queued', lots: [] });
+
+      let isMounted = true;
+      const fetchLots = async () => {
+        try {
+          const data = await apiWithToken(`/purchases/${selectedId}/lots`);
+          if (!isMounted) return;
+          setLotsState(data);
+          if (data.status === 'queued' || data.status === 'in_progress') {
+            setTimeout(fetchLots, 3000);
+          }
+        } catch (err) {
+          if (isMounted) setError(err.message);
+        }
+      };
+
+      fetchLots();
+      return () => {
+        isMounted = false;
+      };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -425,11 +475,59 @@ function App() {
     setError('');
     setMessage('');
     try {
-      await apiWithToken('/purchases', { method: 'POST', body: purchaseForm });
+      let termsText = purchaseForm.terms_text?.trim() || '';
+      if (purchaseFile) {
+        termsText = await convertTechTaskFile(purchaseFile);
+      }
+      if (!termsText) {
+        setError('Добавьте описание или загрузите файл ТЗ.');
+        return;
+      }
+      await apiWithToken('/purchases', {
+        method: 'POST',
+        body: {
+          custom_name: purchaseForm.custom_name,
+          terms_text: termsText,
+        },
+      });
       setPurchaseForm({ custom_name: '', terms_text: '' });
+      setPurchaseFile(null);
       setMessage('Закупка создана');
       await loadPurchases();
       setShowPurchaseModal(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createLot = async (evt) => {
+    evt.preventDefault();
+    if (!selectedId) return;
+    setBusy(true);
+    setError('');
+    try {
+      const payload = {
+        name: newLotForm.name.trim(),
+        parameters: newLotForm.parameters
+          .filter((param) => param.name.trim() && param.value.trim())
+          .map((param) => ({
+            name: param.name.trim(),
+            value: param.value.trim(),
+            units: param.units.trim(),
+          })),
+      };
+      const created = await apiWithToken(`/purchases/${selectedId}/lots`, {
+        method: 'POST',
+        body: payload,
+      });
+      setLotsState((prev) => ({
+        status: prev.status,
+        lots: [...prev.lots, created],
+      }));
+      setNewLotForm({ name: '', parameters: [{ name: '', value: '', units: '' }] });
+      setShowCreateLotModal(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -495,6 +593,29 @@ function App() {
 
   const selectedPurchase = purchases.find((p) => p.id === selectedId);
   const purchaseHasLongText = (selectedPurchase?.terms_text || '').length > 420;
+  const lotsReady = lotsState.lots && lotsState.lots.length > 0;
+  const truncateText = (value, limit) => (value.length > limit ? `${value.slice(0, limit)}…` : value);
+  const renderParamPreview = (param) => {
+    const units = param.units ? ` ${param.units}` : '';
+    return truncateText(`${param.name}: ${param.value}${units}`, 50);
+  };
+  const addLotParameter = () =>
+    setNewLotForm((prev) => ({
+      ...prev,
+      parameters: [...prev.parameters, { name: '', value: '', units: '' }],
+    }));
+  const updateLotParameter = (index, field, value) =>
+    setNewLotForm((prev) => ({
+      ...prev,
+      parameters: prev.parameters.map((param, idx) =>
+        idx === index ? { ...param, [field]: value } : param
+      ),
+    }));
+  const removeLotParameter = (index) =>
+    setNewLotForm((prev) => ({
+      ...prev,
+      parameters: prev.parameters.filter((_, idx) => idx !== index),
+    }));
   const allSelectableRowIds = useMemo(() => {
     const ids = [];
     for (const s of suppliers) {
@@ -593,8 +714,17 @@ function App() {
                   value={purchaseForm.terms_text}
                   onChange={(e) => setPurchaseForm((f) => ({ ...f, terms_text: e.target.value }))}
                   placeholder="Кратко опишите предмет закупки"
-                  required
+                  required={!purchaseFile}
                 />
+                <label>Файл ТЗ (pdf, xlsx, doc, docx, rtf, txt)</label>
+                <input
+                  type="file"
+                  accept=".pdf,.xlsx,.doc,.docx,.rtf,.txt"
+                  onChange={(e) => setPurchaseFile(e.target.files?.[0] || null)}
+                />
+                <div className="muted" style={{ fontSize: 12 }}>
+                  Если файл загружен, описание будет сформировано автоматически на основе документа.
+                </div>
                 <div className="stack" style={{ justifyContent: 'flex-end', marginTop: 6 }}>
                   <button type="button" className="secondary" onClick={() => setShowPurchaseModal(false)} disabled={busy}>
                     Отмена
@@ -637,7 +767,192 @@ function App() {
                   {purchaseDetailsExpanded ? 'Свернуть' : 'Показать полностью'}
                 </button>
               )}
+              <div style={{ marginTop: 16 }}>
+                <h4 style={{ marginBottom: 8 }}>Лоты</h4>
+                {!lotsReady && lotsState.status !== 'completed' && lotsState.status !== 'failed' && (
+                  <p className="muted" style={{ margin: 0 }}>
+                    Извлекаем лоты из технического задания…
+                  </p>
+                )}
+                {!lotsReady && lotsState.status === 'completed' && (
+                  <p className="muted" style={{ margin: 0 }}>
+                    Лоты пока не найдены.
+                  </p>
+                )}
+                {!lotsReady && lotsState.status === 'failed' && (
+                  <p className="muted" style={{ margin: 0 }}>
+                    Не удалось извлечь лоты. Проверьте настройки OpenAI и повторите попытку.
+                  </p>
+                )}
+                {lotsReady && (
+                  <div className="stack" style={{ flexDirection: 'column', gap: 12 }}>
+                    {lotsState.lots.map((lot) => (
+                      <button
+                        key={lot.id}
+                        type="button"
+                        className="card"
+                        style={{ background: '#f8fafc', textAlign: 'left' }}
+                        onClick={() => {
+                          setActiveLot(lot);
+                          setShowLotModal(true);
+                        }}
+                      >
+                        <div style={{ fontWeight: 600 }}>{lot.name}</div>
+                        {lot.parameters.length > 0 ? (
+                          <div className="muted" style={{ marginTop: 6 }}>
+                            {lot.parameters.slice(0, 3).map((param, idx) => (
+                              <div key={`${lot.id}-preview-${idx}`}>{renderParamPreview(param)}</div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="muted" style={{ marginTop: 6 }}>
+                            Параметры не указаны.
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="card"
+                      style={{ borderStyle: 'dashed', textAlign: 'left', background: '#fff' }}
+                      onClick={() => setShowCreateLotModal(true)}
+                    >
+                      <div style={{ fontWeight: 600 }}>+ Добавить лот</div>
+                      <div className="muted" style={{ marginTop: 6 }}>
+                        Создайте новый лот вручную.
+                      </div>
+                    </button>
+                  </div>
+                )}
+                {!lotsReady && (lotsState.status === 'completed' || lotsState.status === 'failed') && (
+                  <button
+                    type="button"
+                    className="card"
+                    style={{ borderStyle: 'dashed', textAlign: 'left', background: '#fff', marginTop: 12 }}
+                    onClick={() => setShowCreateLotModal(true)}
+                  >
+                    <div style={{ fontWeight: 600 }}>+ Добавить лот</div>
+                    <div className="muted" style={{ marginTop: 6 }}>
+                      Создайте новый лот вручную.
+                    </div>
+                  </button>
+                )}
+              </div>
             </div>
+
+            {showLotModal && activeLot && (
+              <div className="modal-overlay" role="dialog" aria-modal="true">
+                <div className="modal" style={{ maxWidth: 640 }}>
+                  <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0 }}>{activeLot.name}</h3>
+                    <button
+                      type="button"
+                      className="linkish"
+                      onClick={() => setShowLotModal(false)}
+                      disabled={busy}
+                      aria-label="Закрыть"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {activeLot.parameters.length > 0 ? (
+                    <ul style={{ marginTop: 12 }}>
+                      {activeLot.parameters.map((param, idx) => (
+                        <li key={`${activeLot.id}-full-${idx}`}>
+                          <strong>{param.name}:</strong> {param.value}
+                          {param.units ? ` ${param.units}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="muted" style={{ marginTop: 12 }}>
+                      Параметры не указаны.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {showCreateLotModal && (
+              <div className="modal-overlay" role="dialog" aria-modal="true">
+                <div className="modal" style={{ maxWidth: 680 }}>
+                  <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0 }}>Новый лот</h3>
+                    <button
+                      type="button"
+                      className="linkish"
+                      onClick={() => setShowCreateLotModal(false)}
+                      disabled={busy}
+                      aria-label="Закрыть"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <form onSubmit={createLot} className="stack" style={{ flexDirection: 'column', marginTop: 12 }}>
+                    <label>Название лота</label>
+                    <input
+                      value={newLotForm.name}
+                      onChange={(e) => setNewLotForm((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="Например, Лот 1 — Серверы"
+                      required
+                    />
+                    <div className="section-title">Параметры</div>
+                    {newLotForm.parameters.map((param, idx) => (
+                      <div key={`new-lot-${idx}`} className="contact-block">
+                        <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div className="muted" style={{ fontWeight: 700 }}>Параметр {idx + 1}</div>
+                          {newLotForm.parameters.length > 1 && (
+                            <button
+                              type="button"
+                              className="linkish"
+                              onClick={() => removeLotParameter(idx)}
+                            >
+                              Удалить
+                            </button>
+                          )}
+                        </div>
+                        <label>Название</label>
+                        <input
+                          value={param.name}
+                          onChange={(e) => updateLotParameter(idx, 'name', e.target.value)}
+                          placeholder="Например, Количество"
+                          required
+                        />
+                        <label>Значение</label>
+                        <input
+                          value={param.value}
+                          onChange={(e) => updateLotParameter(idx, 'value', e.target.value)}
+                          placeholder="Например, 10"
+                          required
+                        />
+                        <label>Единицы (необязательно)</label>
+                        <input
+                          value={param.units}
+                          onChange={(e) => updateLotParameter(idx, 'units', e.target.value)}
+                          placeholder="шт."
+                        />
+                      </div>
+                    ))}
+                    <button type="button" className="secondary" onClick={addLotParameter}>
+                      Добавить параметр
+                    </button>
+                    <div className="stack" style={{ justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => setShowCreateLotModal(false)}
+                        disabled={busy}
+                      >
+                        Отмена
+                      </button>
+                      <button type="submit" className="primary" disabled={busy}>
+                        Создать лот
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
 
             <div className="card">
               <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between' }}>

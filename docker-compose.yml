@@ -50,11 +50,19 @@ services:
     depends_on:
       - backend
 
+  doc-to-md:
+    build:
+      context: ./doc-to-md
+    restart: unless-stopped
+    volumes:
+      - doc_to_md_models:/models
+
   nginx:
     image: nginx:1.27-alpine
     depends_on:
       - frontend
       - backend
+      - doc-to-md
     ports:
       - "80:80"
       - "443:443"
@@ -66,3 +74,4 @@ services:
 
 volumes:
   db_data:
+  doc_to_md_models:

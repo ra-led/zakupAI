@@ -1,0 +1,11 @@
+fastapi==0.110.2
+uvicorn==0.29.0
+python-multipart==0.0.6
+striprtf==0.0.26
+
+pypdfium2==4.30.0
+
+docling==2.26.0
+docling-core==2.27.0
+docling-ibm-models==3.4.1
+docling-parse==3.4.0

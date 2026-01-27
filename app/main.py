@@ -19,6 +19,8 @@ from .models import (
     EmailAccount,
     EmailMessage,
     LLMTask,
+    Lot,
+    LotParameter,
     Purchase,
     Supplier,
     SupplierContact,
@@ -32,6 +34,10 @@ from .schemas import (
     EmailMessageRead,
     LLMTaskCreate,
     LLMTaskRead,
+    LotCreate,
+    LotsResponse,
+    LotRead,
+    LotParameterRead,
     PurchaseCreate,
     PurchaseRead,
     PurchaseUpdate,
@@ -139,6 +145,11 @@ def create_purchase(payload: PurchaseCreate, session=Depends(get_session), curre
     session.add(purchase)
     session.commit()
     session.refresh(purchase)
+    if purchase.terms_text:
+        try:
+            task_queue.run_lots_extraction_now(purchase.id, purchase.terms_text)
+        except Exception as exc:
+            print(f"[lots_extraction] immediate run failed: {exc}")
     task_queue.enqueue_supplier_search_task(purchase.id, purchase.terms_text or "")
     return purchase
 
@@ -186,8 +197,101 @@ def update_purchase(
     session.refresh(purchase)
 
     if payload.terms_text is not None and payload.terms_text != original_terms:
+        if purchase.terms_text:
+            try:
+                task_queue.run_lots_extraction_now(purchase.id, purchase.terms_text)
+            except Exception as exc:
+                print(f"[lots_extraction] immediate run failed: {exc}")
         task_queue.enqueue_supplier_search_task(purchase.id, purchase.terms_text or "")
     return purchase
+
+
+def _load_lots(session, purchase_id: int) -> list[LotRead]:
+    lots = session.exec(select(Lot).where(Lot.purchase_id == purchase_id)).all()
+    lot_reads: list[LotRead] = []
+    for lot in lots:
+        params = session.exec(select(LotParameter).where(LotParameter.lot_id == lot.id)).all()
+        lot_reads.append(
+            LotRead(
+                id=lot.id or 0,
+                name=lot.name,
+                parameters=[
+                    LotParameterRead(name=param.name, value=param.value, units=param.units)
+                    for param in params
+                ],
+            )
+        )
+    return lot_reads
+
+
+@app.get("/purchases/{purchase_id}/lots", response_model=LotsResponse)
+def get_purchase_lots(
+    purchase_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> LotsResponse:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    lots = _load_lots(session, purchase_id)
+    task = session.exec(
+        select(LLMTask)
+        .where(
+            LLMTask.purchase_id == purchase_id,
+            LLMTask.task_type == "lots_extraction",
+        )
+        .order_by(LLMTask.created_at.desc())
+    ).first()
+
+    if (not task or task.status in ("queued", "in_progress")) and purchase.terms_text and not lots:
+        try:
+            task = task_queue.run_lots_extraction_now(purchase_id, purchase.terms_text)
+        except Exception as exc:
+            print(f"[lots_extraction] on-demand run failed: {exc}")
+            if not task:
+                task = task_queue.enqueue_lots_extraction_task(purchase_id, purchase.terms_text)
+        lots = _load_lots(session, purchase_id)
+
+    status_value = task.status if task else ("completed" if lots else "queued")
+    return LotsResponse(status=status_value, lots=lots)
+
+
+@app.post("/purchases/{purchase_id}/lots", response_model=LotRead, status_code=status.HTTP_201_CREATED)
+def create_purchase_lot(
+    purchase_id: int,
+    payload: LotCreate,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> LotRead:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    lot = Lot(purchase_id=purchase_id, name=payload.name)
+    session.add(lot)
+    session.commit()
+    session.refresh(lot)
+
+    for param in payload.parameters:
+        session.add(
+            LotParameter(
+                lot_id=lot.id,
+                name=param.name,
+                value=param.value,
+                units=param.units or "",
+            )
+        )
+    session.commit()
+
+    params = session.exec(select(LotParameter).where(LotParameter.lot_id == lot.id)).all()
+    return LotRead(
+        id=lot.id or 0,
+        name=lot.name,
+        parameters=[
+            LotParameterRead(name=param.name, value=param.value, units=param.units) for param in params
+        ],
+    )
 
 
 @app.post("/purchases/{purchase_id}/suppliers", response_model=SupplierRead, status_code=status.HTTP_201_CREATED)

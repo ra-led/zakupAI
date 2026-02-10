@@ -179,7 +179,9 @@ class TextToMarkdownStep(PipelineStep):
 def run_pipeline(file_path, update_status, options, page_range):
     data = file_path
 
-    ocr_engine = options.get("ocr_engine", "tesseract")
+    # Some environments do not have tesserocr runtime dependencies.
+    # Prefer easyocr by default to avoid hard failures on /convert.
+    ocr_engine = options.get("ocr_engine", os.getenv("DOCLING_OCR_ENGINE", "easyocr"))
 
     steps = [
         LayoutAnalysisPDF(update_status, ocr_engine, page_range=page_range),

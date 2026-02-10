@@ -103,14 +103,14 @@ def extract_lots(terms_text: str) -> Dict[str, Any]:
 
     base_url = os.getenv("OPENAI_BASE_URL")
     client = OpenAI(api_key=api_key, base_url=base_url)
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
     response = client.chat.completions.create(
         model=model,
         messages=_build_lots_prompt(terms_text),
         response_format={"type": "json_schema", "json_schema": LOTS_SCHEMA},
         temperature=0.2,
-        max_tokens=2000,
+        max_completion_tokens=2000,
     )
 
     output_text = response.choices[0].message.content if response.choices else None
@@ -145,14 +145,14 @@ def extract_bid_lots(terms_text: str) -> Dict[str, Any]:
 
     base_url = os.getenv("OPENAI_BASE_URL")
     client = OpenAI(api_key=api_key, base_url=base_url)
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
     response = client.chat.completions.create(
         model=model,
         messages=_build_bid_lots_prompt(terms_text),
         response_format={"type": "json_schema", "json_schema": LOTS_WITH_PRICE_SCHEMA},
         temperature=0.2,
-        max_tokens=2000,
+        max_completion_tokens=2000,
     )
 
     output_text = response.choices[0].message.content if response.choices else None

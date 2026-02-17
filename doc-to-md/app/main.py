@@ -41,6 +41,7 @@ async def convert_document(file: UploadFile = File(...)) -> dict:
         try:
             markdown = convert_to_markdown(temp_path)
         except Exception as exc:
+            print(f"[doc-to-md] conversion_exception: {exc}")
             raise HTTPException(status_code=500, detail=f"Conversion failed: {exc}") from exc
 
     markdown = markdown.strip()

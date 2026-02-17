@@ -230,6 +230,7 @@ class TaskQueue:
                 payload = self._load_payload(task.input_text)
                 terms_text = payload.get("terms_text", "")
                 print(f"[lots_extraction] start task={task.id} purchase={task.purchase_id}")
+                print(f"[lots_extraction] terms_text={terms_text}")
                 if not terms_text:
                     task.output_text = json.dumps({"lots": []}, ensure_ascii=False)
                     task.status = "completed"
@@ -248,6 +249,7 @@ class TaskQueue:
                 terms_text = payload.get("terms_text", "")
                 bid_id = payload.get("bid_id")
                 print(f"[bid_lots_extraction] start task={task.id} bid={bid_id}")
+                print(f"[bid_lots_extraction] bid_text={terms_text}")
                 if not terms_text or not bid_id:
                     task.output_text = json.dumps({"lots": []}, ensure_ascii=False)
                     task.status = "completed"

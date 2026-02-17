@@ -66,6 +66,9 @@ def run_pipeline(file_path: str, update_status, options, page_range):
         }
         response = requests.post(endpoint, headers=headers, data=data, files=files, timeout=180)
 
+    print(f"[mistral-ocr] status_code={response.status_code}")
+    print(f"[mistral-ocr] raw_response={response.text}")
+
     if response.status_code >= 400:
         raise MistralOcrError(
             f"Mistral OCR request failed ({response.status_code}): {response.text[:500]}"
@@ -74,6 +77,7 @@ def run_pipeline(file_path: str, update_status, options, page_range):
     try:
         payload = response.json()
     except Exception as exc:  # noqa: BLE001
+        print(f"[mistral-ocr] json_parse_exception: {exc}")
         raise MistralOcrError(f"Invalid JSON in Mistral OCR response: {exc}") from exc
 
     markdown = _extract_markdown_from_payload(payload)

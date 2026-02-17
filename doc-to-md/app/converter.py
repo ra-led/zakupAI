@@ -162,13 +162,16 @@ def convert_to_markdown(path: Path, update_status: Callable[[str], None] | None 
         raise ValueError(f"Unsupported format: {suffix}")
 
     if suffix == ".txt":
-        return path.read_text(encoding="utf-8", errors="ignore").strip()
+        markdown = path.read_text(encoding="utf-8", errors="ignore").strip()
+        print(f"[doc-to-md] converted_markdown_txt={markdown}")
+        return markdown
 
     if suffix == ".rtf":
         # Quick path for plain RTF text where LibreOffice is unavailable.
         content = path.read_text(encoding="utf-8", errors="ignore")
         quick_text = rtf_to_text(content).strip()
         if quick_text:
+            print(f"[doc-to-md] converted_markdown_rtf={quick_text}")
             return quick_text
 
     if suffix != ".pdf":
@@ -178,11 +181,14 @@ def convert_to_markdown(path: Path, update_status: Callable[[str], None] | None 
         markdown = _html_to_markdown(html_content)
         if not markdown:
             raise RuntimeError("LibreOffice HTML conversion produced empty markdown")
+        print(f"[doc-to-md] converted_markdown_non_pdf={markdown}")
         return markdown
 
     if suffix == ".pdf":
         update_status("PDF conversion started.")
         page_range = _build_page_range(path)
-        return run_pdf_pipeline(str(path), update_status, {}, page_range)
+        markdown = run_pdf_pipeline(str(path), update_status, {}, page_range)
+        print(f"[doc-to-md] converted_markdown_pdf={markdown}")
+        return markdown
 
     raise ValueError(f"Unsupported format: {suffix}")

@@ -54,6 +54,8 @@ services:
     build:
       context: ./doc-to-md
     restart: unless-stopped
+    environment:
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
     volumes:
       - doc_to_md_models:/models
 

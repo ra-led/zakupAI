@@ -1,5 +1,6 @@
 from pathlib import Path
 import tempfile
+import traceback
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,6 +42,8 @@ async def convert_document(file: UploadFile = File(...)) -> dict:
         try:
             markdown = convert_to_markdown(temp_path)
         except Exception as exc:
+            print(f"[doc-to-md] conversion_exception: {exc}", flush=True)
+            print(f"[doc-to-md] conversion_traceback\n{traceback.format_exc()}", flush=True)
             raise HTTPException(status_code=500, detail=f"Conversion failed: {exc}") from exc
 
     markdown = markdown.strip()

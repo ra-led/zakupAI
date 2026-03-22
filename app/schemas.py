@@ -123,6 +123,7 @@ class LLMTaskCreate(BaseModel):
 
 class LLMTaskRead(BaseModel):
     id: int
+    bid_id: Optional[int] = None
     task_type: str
     input_text: str
     output_text: Optional[str]
@@ -210,3 +211,34 @@ class LotCreate(BaseModel):
 class LotsResponse(BaseModel):
     status: str
     lots: List[LotRead] = Field(default_factory=list)
+
+
+class BidCreate(BaseModel):
+    supplier_id: Optional[int] = None
+    supplier_name: Optional[str] = None
+    supplier_contact: Optional[str] = None
+    bid_text: str
+
+
+class BidLotParameterRead(BaseModel):
+    name: str
+    value: str
+    units: str
+
+
+class BidLotRead(BaseModel):
+    id: int
+    name: str
+    price: Optional[str]
+    parameters: List[BidLotParameterRead] = Field(default_factory=list)
+
+
+class BidRead(BaseModel):
+    id: int
+    purchase_id: int
+    supplier_id: Optional[int]
+    supplier_name: Optional[str]
+    supplier_contact: Optional[str]
+    bid_text: str
+    created_at: datetime
+    lots: List[BidLotRead] = Field(default_factory=list)

@@ -331,6 +331,18 @@ function App() {
   const [showLotModal, setShowLotModal] = useState(false);
   const [showCreateLotModal, setShowCreateLotModal] = useState(false);
   const [newLotForm, setNewLotForm] = useState({ name: '', parameters: [{ name: '', value: '', units: '' }] });
+  const [bids, setBids] = useState([]);
+  const [pendingBids, setPendingBids] = useState([]);
+  const [showPurchaseProcessingCard, setShowPurchaseProcessingCard] = useState(false);
+  const [searchEtaByTask, setSearchEtaByTask] = useState({});
+  const [showBidModal, setShowBidModal] = useState(false);
+  const [bidForm, setBidForm] = useState({
+    supplier_id: '',
+    supplier_name: '',
+    supplier_contact: '',
+    bid_text: '',
+  });
+  const [bidFile, setBidFile] = useState(null);
 
   useEffect(() => {
     if (token) {
@@ -347,12 +359,11 @@ function App() {
 
     const preloadSearchState = async () => {
       try {
-        const selectedPurchase = purchases.find((p) => p.id === selectedId);
-        const state = await apiWithToken(`/purchases/${selectedId}/suppliers/search`, {
-          method: 'POST',
-          body: { terms_text: selectedPurchase?.terms_text || '', hints: [] },
-        });
-        setLlmQueries(state);
+        const state = await apiWithToken(`/purchases/${selectedId}/suppliers/search`);
+        if (state?.task_id && state?.estimated_complete_time) {
+          setSearchEtaByTask((prev) => (prev[state.task_id] ? prev : { ...prev, [state.task_id]: state.estimated_complete_time }));
+        }
+        setLlmQueries(state || null);
       } catch (err) {
         console.error('Не удалось загрузить состояние поиска', err);
       }
@@ -360,7 +371,7 @@ function App() {
 
     preloadSearchState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, selectedId, purchases]);
+  }, [token, selectedId]);
 
   const apiWithToken = (path, options) => apiFetch(path, { ...options, token });
 
@@ -388,6 +399,15 @@ function App() {
       }
       setContactsBySupplier(map);
       setSelectedRows(new Set());
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const loadBids = async (purchaseId) => {
+    try {
+      const data = await apiWithToken(`/purchases/${purchaseId}/bids`);
+      setBids(data);
     } catch (err) {
       setError(err.message);
     }
@@ -421,9 +441,48 @@ function App() {
     }
   };
 
+  const runSupplierSearch = async () => {
+    if (!selectedId) return;
+    setBusy(true);
+    setError('');
+    try {
+      const selectedPurchase = purchases.find((p) => p.id === selectedId);
+      const state = await apiWithToken(`/purchases/${selectedId}/suppliers/search`, {
+        method: 'POST',
+        body: { terms_text: selectedPurchase?.terms_text || '', hints: [] },
+      });
+      if (state?.task_id && state?.estimated_complete_time) {
+        setSearchEtaByTask((prev) => (prev[state.task_id] ? prev : { ...prev, [state.task_id]: state.estimated_complete_time }));
+      }
+      setLlmQueries(state);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const refreshSupplierSearch = async () => {
+    if (!selectedId) return;
+    setBusy(true);
+    setError('');
+    try {
+      const state = await apiWithToken(`/purchases/${selectedId}/suppliers/search`);
+      if (state?.task_id && state?.estimated_complete_time) {
+        setSearchEtaByTask((prev) => (prev[state.task_id] ? prev : { ...prev, [state.task_id]: state.estimated_complete_time }));
+      }
+      setLlmQueries(state || null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (selectedId && token) {
       loadSuppliers(selectedId);
+      loadBids(selectedId);
       setEmailDraft(null);
       setLlmQueries(null);
       setPurchaseDetailsExpanded(false);
@@ -451,6 +510,81 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
+  const createBid = async (evt) => {
+    evt.preventDefault();
+    if (!selectedId) return;
+    const purchaseId = selectedId;
+    const tempId = `pending-${Date.now()}`;
+    const pendingSupplierName = bidForm.supplier_name?.trim() || 'Поставщик не указан';
+    const pendingSupplierContact = bidForm.supplier_contact?.trim() || '';
+    setShowBidModal(false);
+    setPendingBids((prev) => [
+      {
+        id: tempId,
+        supplier_name: pendingSupplierName,
+        supplier_contact: pendingSupplierContact,
+      },
+      ...prev,
+    ]);
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      let bidText = bidForm.bid_text?.trim() || '';
+      if (bidFile) {
+        bidText = await convertTechTaskFile(bidFile);
+      }
+      if (!bidText) {
+        setError('Добавьте текст предложения или загрузите файл.');
+        return;
+      }
+      const payload = {
+        bid_text: bidText,
+        supplier_id: bidForm.supplier_id ? Number(bidForm.supplier_id) : null,
+        supplier_name: bidForm.supplier_name?.trim() || null,
+        supplier_contact: bidForm.supplier_contact?.trim() || null,
+      };
+      await apiWithToken(`/purchases/${purchaseId}/bids`, {
+        method: 'POST',
+        body: payload,
+      });
+      setBidForm({ supplier_id: '', supplier_name: '', supplier_contact: '', bid_text: '' });
+      setBidFile(null);
+      setMessage('Предложение добавлено');
+      await loadBids(purchaseId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPendingBids((prev) => prev.filter((item) => item.id !== tempId));
+      setBusy(false);
+    }
+  };
+
+  const handleBidSupplierChange = (value) => {
+    if (!value) {
+      setBidForm((prev) => ({
+        ...prev,
+        supplier_id: '',
+        supplier_name: '',
+        supplier_contact: '',
+      }));
+      return;
+    }
+    const supplierId = Number(value);
+    const supplier = suppliers.find((item) => item.id === supplierId);
+    const contacts = contactsBySupplier[supplierId] || [];
+    setBidForm((prev) => ({
+      ...prev,
+      supplier_id: value,
+      supplier_name: supplier?.company_name || supplier?.website_url || prev.supplier_name,
+      supplier_contact: contacts[0]?.email || prev.supplier_contact,
+    }));
+  };
+
+  const selectedBidSupplierContacts = bidForm.supplier_id
+    ? contactsBySupplier[Number(bidForm.supplier_id)] || []
+    : [];
+
   const handleAuth = (newToken, email) => {
     localStorage.setItem('zakupai_token', newToken);
     localStorage.setItem('zakupai_user', email);
@@ -466,27 +600,37 @@ function App() {
     setPurchases([]);
     setSuppliers([]);
     setContactsBySupplier({});
+    setBids([]);
+    setSearchEtaByTask({});
     setSelectedId(null);
   };
 
   const createPurchase = async (evt) => {
     evt.preventDefault();
+    const purchasePayload = {
+      custom_name: purchaseForm.custom_name,
+      terms_text: purchaseForm.terms_text,
+    };
+    const filePayload = purchaseFile;
+    setShowPurchaseModal(false);
+    setShowPurchaseProcessingCard(true);
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      let termsText = purchaseForm.terms_text?.trim() || '';
-      if (purchaseFile) {
-        termsText = await convertTechTaskFile(purchaseFile);
+      let termsText = purchasePayload.terms_text?.trim() || '';
+      if (filePayload) {
+        termsText = await convertTechTaskFile(filePayload);
       }
       if (!termsText) {
         setError('Добавьте описание или загрузите файл ТЗ.');
+        setShowPurchaseProcessingCard(false);
         return;
       }
       await apiWithToken('/purchases', {
         method: 'POST',
         body: {
-          custom_name: purchaseForm.custom_name,
+          custom_name: purchasePayload.custom_name,
           terms_text: termsText,
         },
       });
@@ -494,9 +638,10 @@ function App() {
       setPurchaseFile(null);
       setMessage('Закупка создана');
       await loadPurchases();
-      setShowPurchaseModal(false);
+      setShowPurchaseProcessingCard(false);
     } catch (err) {
       setError(err.message);
+      setShowPurchaseProcessingCard(false);
     } finally {
       setBusy(false);
     }
@@ -665,6 +810,14 @@ function App() {
           {message && <div className="alert" style={{ background: '#ecfdf3', color: '#166534' }}>{message}</div>}
           {error && <div className="alert">{error}</div>}
           <div className="list">
+            {showPurchaseProcessingCard && (
+              <div className="card" style={{ border: '1.5px dashed #cbd5e1' }}>
+                <h3 style={{ margin: '0 0 6px 0' }}>Новая закупка создаётся…</h3>
+                <p className="muted" style={{ marginBottom: 0 }}>
+                  Документ загружается и запускается извлечение лотов из ТЗ.
+                </p>
+              </div>
+            )}
             {sortedPurchases.map((purchase) => (
               <PurchaseCard
                 key={purchase.id}
@@ -1081,16 +1234,26 @@ function App() {
             )}
 
             <div className="card">
-              <h3 style={{ marginTop: 0 }}>Автопоиск поставщиков</h3>
+              <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                <h3 style={{ marginTop: 0, marginBottom: 0 }}>Поиск поставщиков</h3>
+                <div className="stack" style={{ alignItems: 'center', gap: 8 }}>
+                  <button className="primary" onClick={runSupplierSearch} disabled={busy}>
+                    Запустить поиск
+                  </button>
+                  <button className="secondary" onClick={refreshSupplierSearch} disabled={busy}>
+                    Обновить статус
+                  </button>
+                </div>
+              </div>
 
               {llmQueries ? (
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: 14, borderRadius: 10 }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: 14, borderRadius: 10, marginTop: 12 }}>
                   <div className="tag" style={{ marginBottom: 8 }}>
                     Задача #{llmQueries.task_id}: {llmQueries.status}
                   </div>
-                  {llmQueries.estimated_complete_time && (
+                  {(searchEtaByTask[llmQueries.task_id] || llmQueries.estimated_complete_time) && (
                     <p className="muted" style={{ marginTop: 0 }}>
-                      Поиск будет завершен до {formatEstimatedCompletion(llmQueries.estimated_complete_time)}
+                      Поиск будет завершен до {formatEstimatedCompletion(searchEtaByTask[llmQueries.task_id] || llmQueries.estimated_complete_time)}
                     </p>
                   )}
                   {llmQueries.tech_task_excerpt && (
@@ -1108,7 +1271,9 @@ function App() {
                   <p className="muted">{llmQueries.note}</p>
                 </div>
               ) : (
-                <p className="muted">Поиск поставщиков запускается автоматически на основе описания закупки.</p>
+                <p className="muted" style={{ marginTop: 12 }}>
+                  Поиск поставщиков запускается вручную кнопкой «Запустить поиск».
+                </p>
               )}
             </div>
 
@@ -1148,6 +1313,177 @@ function App() {
                 </p>
               )}
             </div>
+
+            <div className="card">
+              <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0 }}>Предложения</h3>
+                <button className="secondary" onClick={() => setShowBidModal(true)} disabled={busy}>
+                  Добавить предложение
+                </button>
+              </div>
+              <div className="list" style={{ marginTop: 12 }}>
+                {pendingBids.map((pendingBid) => (
+                  <div key={pendingBid.id} className="card bid-card" style={{ marginBottom: 0, opacity: 0.8 }}>
+                    <div className="bid-card__header">
+                      <div>
+                        <div className="bid-card__title">Предложение</div>
+                        <div className="bid-card__supplier">{pendingBid.supplier_name}</div>
+                        {pendingBid.supplier_contact && <div className="muted">Контакт: {pendingBid.supplier_contact}</div>}
+                      </div>
+                      <div className="tag">В обработке</div>
+                    </div>
+                    <p className="muted" style={{ marginBottom: 0 }}>
+                      Предложение отправлено. Конвертация файла и извлечение лотов/цен уже запущены…
+                    </p>
+                  </div>
+                ))}
+                {bids.map((bid) => (
+                  <div key={bid.id} className="card bid-card" style={{ marginBottom: 0 }}>
+                    <div className="bid-card__header">
+                      <div>
+                        <div className="bid-card__title">Предложение</div>
+                        <div className="bid-card__supplier">
+                          {bid.supplier_name || 'Поставщик не указан'}
+                        </div>
+                        {bid.supplier_contact && (
+                          <div className="muted">Контакт: {bid.supplier_contact}</div>
+                        )}
+                      </div>
+                      <div className="tag">Лотов: {bid.lots?.length || 0}</div>
+                    </div>
+                    <p className="muted">
+                      {(bid.bid_text || '').length > 160
+                        ? `${bid.bid_text.slice(0, 160)}…`
+                        : bid.bid_text}
+                    </p>
+                    {bid.lots?.length ? (
+                      <div className="bid-lots">
+                        {bid.lots.map((lot) => (
+                          <div key={lot.id} className="bid-lot">
+                            <div className="bid-lot__header">
+                              <span className="bid-lot__name">{lot.name}</span>
+                              <span className="bid-lot__price">
+                                {lot.price ? `Цена: ${lot.price}` : 'Цена не указана'}
+                              </span>
+                            </div>
+                            {lot.parameters?.length ? (
+                              <ul className="bid-lot__params">
+                                {lot.parameters.map((param, idx) => (
+                                  <li key={`${lot.id}-param-${idx}`}>
+                                    <span className="bid-lot__param-name">{param.name}:</span>{' '}
+                                    {param.value}
+                                    {param.units ? ` ${param.units}` : ''}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="muted">Параметры не указаны.</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="muted">Лоты из предложения ещё не выделены.</div>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="create-card"
+                  onClick={() => setShowBidModal(true)}
+                  disabled={busy}
+                >
+                  <div className="create-card__icon">＋</div>
+                  <div className="create-card__text">Добавить предложение</div>
+                </button>
+              </div>
+            </div>
+
+            {showBidModal && (
+              <div className="modal-overlay" role="dialog" aria-modal="true">
+                <div className="modal" style={{ maxWidth: 720 }}>
+                  <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0 }}>Новое предложение</h3>
+                    <button
+                      type="button"
+                      className="linkish"
+                      onClick={() => setShowBidModal(false)}
+                      disabled={busy}
+                      aria-label="Закрыть"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <form onSubmit={createBid} className="stack" style={{ flexDirection: 'column', marginTop: 12 }}>
+                    <label>Поставщик из списка (необязательно)</label>
+                    <select
+                      value={bidForm.supplier_id}
+                      onChange={(e) => handleBidSupplierChange(e.target.value)}
+                    >
+                      <option value="">Выберите поставщика</option>
+                      {suppliers.map((supplier) => (
+                        <option key={supplier.id} value={supplier.id}>
+                          {supplier.company_name || supplier.website_url || `Поставщик #${supplier.id}`}
+                        </option>
+                      ))}
+                    </select>
+
+                    <label>Название поставщика</label>
+                    <input
+                      value={bidForm.supplier_name}
+                      onChange={(e) => setBidForm((f) => ({ ...f, supplier_name: e.target.value }))}
+                      placeholder="Например, ООО «Снабжение»"
+                    />
+                    <label>Контакт (email или телефон)</label>
+                    {selectedBidSupplierContacts.length > 0 && (
+                      <select
+                        value={bidForm.supplier_contact}
+                        onChange={(e) => setBidForm((f) => ({ ...f, supplier_contact: e.target.value }))}
+                      >
+                        <option value="">Выберите контакт</option>
+                        {selectedBidSupplierContacts.map((contact) => (
+                          <option key={contact.id} value={contact.email}>
+                            {contact.email}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <input
+                      value={bidForm.supplier_contact}
+                      onChange={(e) => setBidForm((f) => ({ ...f, supplier_contact: e.target.value }))}
+                      placeholder="sales@example.com"
+                    />
+
+                    <label>Текст предложения</label>
+                    <textarea
+                      rows={6}
+                      value={bidForm.bid_text}
+                      onChange={(e) => setBidForm((f) => ({ ...f, bid_text: e.target.value }))}
+                      placeholder="Вставьте текст коммерческого предложения"
+                    />
+
+                    <label>Загрузить файл предложения</label>
+                    <input
+                      type="file"
+                      accept=".doc,.docx,.pdf,.txt"
+                      onChange={(e) => setBidFile(e.target.files?.[0] || null)}
+                    />
+                    <p className="muted" style={{ marginTop: 0 }}>
+                      Если выбран файл, он будет использован вместо текста.
+                    </p>
+
+                    <div className="stack" style={{ justifyContent: 'flex-end' }}>
+                      <button type="button" className="secondary" onClick={() => setShowBidModal(false)} disabled={busy}>
+                        Отмена
+                      </button>
+                      <button type="submit" className="primary" disabled={busy}>
+                        Сохранить предложение
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>

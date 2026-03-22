@@ -79,11 +79,38 @@ class EmailMessage(SQLModel, table=True):
 class LLMTask(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     purchase_id: Optional[int] = Field(default=None, foreign_key="purchase.id")
+    bid_id: Optional[int] = Field(default=None, foreign_key="bid.id")
     task_type: str
     input_text: str
     output_text: Optional[str] = None
     status: str = Field(default="queued")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Bid(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    purchase_id: int = Field(foreign_key="purchase.id")
+    supplier_id: Optional[int] = Field(default=None, foreign_key="supplier.id")
+    supplier_name: Optional[str] = None
+    supplier_contact: Optional[str] = None
+    bid_text: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class BidLot(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    bid_id: int = Field(foreign_key="bid.id")
+    name: str
+    price: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class BidLotParameter(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    bid_lot_id: int = Field(foreign_key="bidlot.id")
+    name: str
+    value: str
+    units: str
 
 
 class Lot(SQLModel, table=True):

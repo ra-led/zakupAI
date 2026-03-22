@@ -16,6 +16,9 @@ from . import auth
 from .database import create_db_and_tables, get_session
 from .llm_stub import build_search_queries, generate_email_body
 from .models import (
+    Bid,
+    BidLot,
+    BidLotParameter,
     EmailAccount,
     EmailMessage,
     LLMTask,
@@ -27,6 +30,10 @@ from .models import (
     User,
 )
 from .schemas import (
+    BidCreate,
+    BidLotParameterRead,
+    BidLotRead,
+    BidRead,
     EmailAccountCreate,
     EmailAccountRead,
     EmailDraftResponse,
@@ -150,7 +157,6 @@ def create_purchase(payload: PurchaseCreate, session=Depends(get_session), curre
             task_queue.run_lots_extraction_now(purchase.id, purchase.terms_text)
         except Exception as exc:
             print(f"[lots_extraction] immediate run failed: {exc}")
-    task_queue.enqueue_supplier_search_task(purchase.id, purchase.terms_text or "")
     return purchase
 
 
@@ -202,7 +208,6 @@ def update_purchase(
                 task_queue.run_lots_extraction_now(purchase.id, purchase.terms_text)
             except Exception as exc:
                 print(f"[lots_extraction] immediate run failed: {exc}")
-        task_queue.enqueue_supplier_search_task(purchase.id, purchase.terms_text or "")
     return purchase
 
 
@@ -217,6 +222,25 @@ def _load_lots(session, purchase_id: int) -> list[LotRead]:
                 name=lot.name,
                 parameters=[
                     LotParameterRead(name=param.name, value=param.value, units=param.units)
+                    for param in params
+                ],
+            )
+        )
+    return lot_reads
+
+
+def _load_bid_lots(session, bid_id: int) -> list[BidLotRead]:
+    lots = session.exec(select(BidLot).where(BidLot.bid_id == bid_id)).all()
+    lot_reads: list[BidLotRead] = []
+    for lot in lots:
+        params = session.exec(select(BidLotParameter).where(BidLotParameter.bid_lot_id == lot.id)).all()
+        lot_reads.append(
+            BidLotRead(
+                id=lot.id or 0,
+                name=lot.name,
+                price=lot.price,
+                parameters=[
+                    BidLotParameterRead(name=param.name, value=param.value, units=param.units)
                     for param in params
                 ],
             )
@@ -292,6 +316,95 @@ def create_purchase_lot(
             LotParameterRead(name=param.name, value=param.value, units=param.units) for param in params
         ],
     )
+
+
+@app.post("/purchases/{purchase_id}/bids", response_model=BidRead, status_code=status.HTTP_201_CREATED)
+def create_bid(
+    purchase_id: int,
+    payload: BidCreate,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> BidRead:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    bid_text = payload.bid_text.strip()
+    if not bid_text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bid text is required")
+
+    supplier_name = payload.supplier_name
+    supplier_contact = payload.supplier_contact
+    supplier_id = payload.supplier_id
+    supplier = session.get(Supplier, supplier_id) if supplier_id else None
+
+    if supplier_id and (not supplier or supplier.purchase_id != purchase_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Supplier not found")
+
+    if supplier and not supplier_name:
+        supplier_name = supplier.company_name or supplier.website_url
+
+    if supplier and not supplier_contact:
+        contact = session.exec(
+            select(SupplierContact).where(SupplierContact.supplier_id == supplier.id).order_by(SupplierContact.id)
+        ).first()
+        if contact:
+            supplier_contact = contact.email
+
+    bid = Bid(
+        purchase_id=purchase_id,
+        supplier_id=supplier_id,
+        supplier_name=supplier_name,
+        supplier_contact=supplier_contact,
+        bid_text=bid_text,
+    )
+    session.add(bid)
+    session.commit()
+    session.refresh(bid)
+
+    if bid.id is not None:
+        try:
+            task_queue.run_bid_lots_extraction_now(bid.id, bid_text, purchase_id=purchase_id)
+        except Exception as exc:
+            print(f"[bid_lots_extraction] immediate run failed: {exc}")
+
+    lots = _load_bid_lots(session, bid.id or 0)
+    return BidRead(
+        id=bid.id or 0,
+        purchase_id=bid.purchase_id,
+        supplier_id=bid.supplier_id,
+        supplier_name=bid.supplier_name,
+        supplier_contact=bid.supplier_contact,
+        bid_text=bid.bid_text,
+        created_at=bid.created_at,
+        lots=lots,
+    )
+
+
+@app.get("/purchases/{purchase_id}/bids", response_model=List[BidRead])
+def list_bids(
+    purchase_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> List[BidRead]:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    bids = session.exec(select(Bid).where(Bid.purchase_id == purchase_id).order_by(Bid.created_at.desc())).all()
+    return [
+        BidRead(
+            id=bid.id or 0,
+            purchase_id=bid.purchase_id,
+            supplier_id=bid.supplier_id,
+            supplier_name=bid.supplier_name,
+            supplier_contact=bid.supplier_contact,
+            bid_text=bid.bid_text,
+            created_at=bid.created_at,
+            lots=_load_bid_lots(session, bid.id or 0),
+        )
+        for bid in bids
+    ]
 
 
 @app.post("/purchases/{purchase_id}/suppliers", response_model=SupplierRead, status_code=status.HTTP_201_CREATED)
@@ -563,6 +676,33 @@ def search_suppliers(
             queue_length=state.queue_length,
             estimated_complete_time=state.estimated_complete_time,
         )
+
+    return SupplierSearchResponse(
+        task_id=state.task_id,
+        status=state.status,
+        queries=state.queries,
+        note=state.note or "Поиск поставщиков выполняется",
+        tech_task_excerpt=state.tech_task_excerpt,
+        search_output=state.search_output,
+        processed_contacts=state.processed_contacts,
+        queue_length=state.queue_length,
+        estimated_complete_time=state.estimated_complete_time,
+    )
+
+
+@app.get("/purchases/{purchase_id}/suppliers/search", response_model=SupplierSearchResponse | None)
+def get_supplier_search_status(
+    purchase_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> SupplierSearchResponse | None:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    state = get_supplier_search_state(purchase_id)
+    if not state:
+        return None
 
     return SupplierSearchResponse(
         task_id=state.task_id,

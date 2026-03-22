@@ -326,3 +326,70 @@ button.secondary {
   margin: 8px 0 12px 0;
   font-size: 16px;
 }
+
+.bid-card {
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  border: 1px solid #e2e8f0;
+}
+
+.bid-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.bid-card__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.bid-card__supplier {
+  font-weight: 700;
+}
+
+.bid-lots {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.bid-lot {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.bid-lot__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.bid-lot__name {
+  font-weight: 700;
+}
+
+.bid-lot__price {
+  font-size: 13px;
+  color: #1e40af;
+  font-weight: 600;
+}
+
+.bid-lot__params {
+  margin: 0;
+  padding-left: 16px;
+  color: #475569;
+}
+
+.bid-lot__param-name {
+  font-weight: 600;
+  color: #0f172a;
+}

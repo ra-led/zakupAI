@@ -14,7 +14,8 @@ from fastapi.responses import StreamingResponse
 
 from . import auth
 from .database import create_db_and_tables, get_session
-from .llm_stub import build_search_queries, generate_email_body
+from .llm_openai import build_search_queries
+from .llm_stub import generate_email_body
 from .models import (
     Bid,
     BidLot,
@@ -664,12 +665,16 @@ def search_suppliers(
         )
 
     if state.status == "completed" and not state.queries:
-        plan = build_search_queries(payload.terms_text or purchase.terms_text or "", payload.hints)
+        try:
+            plan = build_search_queries(payload.terms_text or purchase.terms_text or "", payload.hints)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[search_queries_generation] restore_failed: {exc}")
+            plan = None
         return SupplierSearchResponse(
             task_id=state.task_id,
             status=state.status,
-            queries=plan.queries,
-            note=plan.note,
+            queries=plan.queries if plan else [],
+            note=plan.note if plan else "Запросы не восстановлены: ошибка генерации через LLM",
             tech_task_excerpt=state.tech_task_excerpt,
             search_output=state.search_output,
             processed_contacts=state.processed_contacts,

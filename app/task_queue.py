@@ -8,8 +8,7 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from .database import engine
-from .llm_openai import extract_bid_lots, extract_lots
-from .llm_stub import build_search_queries
+from .llm_openai import build_search_queries, extract_bid_lots, extract_lots
 from .models import BidLot, BidLotParameter, LLMTask, Lot, LotParameter, Purchase
 
 

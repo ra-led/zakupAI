@@ -70,6 +70,24 @@ def _convert_table_to_html(table_tag: Tag) -> str:
     root = table_copy.find("table")
     if not root:
         return ""
+    allowed_table_tags = {"table", "thead", "tbody", "tfoot", "tr", "th", "td"}
+
+    # Unwrap inline/layout tags from LibreOffice output and keep only table structure.
+    for tag in list(root.find_all(True)):
+        tag_name = (tag.name or "").lower()
+        if tag_name in allowed_table_tags:
+            continue
+        if tag_name in {"col", "colgroup"}:
+            tag.decompose()
+            continue
+        tag.unwrap()
+
+    for cell in root.find_all(["th", "td"]):
+        text = _clean_whitespace(cell.get_text(" ", strip=True))
+        cell.clear()
+        if text:
+            cell.append(NavigableString(text))
+
     for tag in root.find_all(True):
         _strip_non_table_attrs(tag)
     _strip_non_table_attrs(root)

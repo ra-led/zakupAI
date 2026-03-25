@@ -4,6 +4,16 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from openai import OpenAI
+try:
+    from app.lots_extraction_prompting import (
+        build_bid_lots_prompt_and_schema,
+        build_lots_prompt_and_schema,
+    )
+except ImportError:  # pragma: no cover
+    from lots_extraction_prompting import (
+        build_bid_lots_prompt_and_schema,
+        build_lots_prompt_and_schema,
+    )
 
 
 @dataclass
@@ -137,95 +147,13 @@ def build_search_queries(terms_text: str, hints: List[str] | None = None) -> Gen
     )
 
 
-LOTS_SCHEMA: Dict[str, Any] = {
-    "name": "lots_extraction",
-    "schema": {
-        "type": "object",
-        "properties": {
-            "lots": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "parameters": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name": {"type": "string"},
-                                    "value": {"type": "string"},
-                                    "units": {"type": "string"},
-                                },
-                                "required": ["name", "value", "units"],
-                                "additionalProperties": False,
-                            },
-                        },
-                    },
-                    "required": ["name", "parameters"],
-                    "additionalProperties": False,
-                },
-            }
-        },
-        "required": ["lots"],
-        "additionalProperties": False,
-    },
-    "strict": True,
-}
-
-
-LOTS_WITH_PRICE_SCHEMA: Dict[str, Any] = {
-    "name": "bid_lots_extraction",
-    "schema": {
-        "type": "object",
-        "properties": {
-            "lots": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "price": {"type": "string"},
-                        "parameters": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name": {"type": "string"},
-                                    "value": {"type": "string"},
-                                    "units": {"type": "string"},
-                                },
-                                "required": ["name", "value", "units"],
-                                "additionalProperties": False,
-                            },
-                        },
-                    },
-                    "required": ["name", "price", "parameters"],
-                    "additionalProperties": False,
-                },
-            }
-        },
-        "required": ["lots"],
-        "additionalProperties": False,
-    },
-    "strict": True,
-}
+_LOTS_PROMPT_STUB, LOTS_SCHEMA = build_lots_prompt_and_schema("")
+_BID_LOTS_PROMPT_STUB, LOTS_WITH_PRICE_SCHEMA = build_bid_lots_prompt_and_schema("")
 
 
 def _build_lots_prompt(terms_text: str) -> List[Dict[str, str]]:
-    system_message = (
-        "Вы извлекаете лоты из технического задания. "
-        "Верните только JSON по схеме. "
-        "Всегда возвращайте массив lots. "
-        "Если нет лотов, верните {\"lots\":[]}. "
-        "Если у параметра нет количественного значения, value=\"compliance\" и units=\"\". "
-        "Если единицы не указаны, units=\"\"."
-    )
-    user_message = f"Техническое задание (markdown):\n{terms_text}"
-    return [
-        {"role": "system", "content": system_message},
-        {"role": "user", "content": user_message},
-    ]
+    prompt, _ = build_lots_prompt_and_schema(terms_text or "")
+    return [{"role": "user", "content": prompt}]
 
 
 def extract_lots(terms_text: str) -> Dict[str, Any]:
@@ -263,21 +191,8 @@ def extract_lots(terms_text: str) -> Dict[str, Any]:
 
 
 def _build_bid_lots_prompt(terms_text: str) -> List[Dict[str, str]]:
-    system_message = (
-        "Вы извлекаете лоты из коммерческого предложения. "
-        "Верните только JSON по схеме. "
-        "Всегда возвращайте массив lots. "
-        "Если нет лотов, верните {\"lots\":[]}. "
-        "Поле price должно быть строкой и может включать валюту. "
-        "Если цена не указана, price=\"не указано\". "
-        "Если у параметра нет количественного значения, value=\"compliance\" и units=\"\". "
-        "Если единицы не указаны, units=\"\"."
-    )
-    user_message = f"Текст предложения (markdown):\n{terms_text}"
-    return [
-        {"role": "system", "content": system_message},
-        {"role": "user", "content": user_message},
-    ]
+    prompt, _ = build_bid_lots_prompt_and_schema(terms_text or "")
+    return [{"role": "user", "content": prompt}]
 
 
 def extract_bid_lots(terms_text: str) -> Dict[str, Any]:

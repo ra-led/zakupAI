@@ -8,8 +8,8 @@ from app.llm_openai import extract_structured_contacts_from_perplexity
 
 def _build_prompt(terms_text: str, min_contacts: int) -> str:
     return (
-        "Найди email контакты поставщиков "
-        f"(не менее {min_contacts}) и вебсайты для следующей закупки:\n"
+        "Найди поставщиков и их веб-сайты "
+        f"(не менее {min_contacts}) для следующей закупки:\n"
         f"{terms_text}"
     )
 
@@ -48,5 +48,5 @@ def search_suppliers_with_perplexity(terms_text: str) -> Dict[str, Any]:
         "note": f"Поиск выполнен через Perplexity ({model})",
         "raw_response": content,
         "search_output": structured.get("search_output", []),
-        "processed_contacts": structured.get("processed_contacts", []),
+        "processed_contacts": [],
     }

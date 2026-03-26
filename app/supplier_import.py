@@ -115,6 +115,8 @@ def merge_contacts(
             continue
         record["source"] = _merge_source(record.get("source"), item.get("source") or "yandex")
         record["confidence"] = max(record["confidence"], _safe_confidence(item.get("confidence"), fallback=0.55))
+        if item.get("reason") and not record.get("reason"):
+            record["reason"] = item.get("reason")
         emails = item.get("emails") or []
         if isinstance(emails, list):
             for email in emails:

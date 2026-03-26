@@ -11,7 +11,11 @@ from app.models import LLMTask, Purchase, Supplier, SupplierContact
 from app.search_providers.perplexity import search_suppliers_with_perplexity
 from app.supplier_import import merge_contacts
 from app.task_queue import TaskQueue
-from suppliers_contacts import collect_contacts_from_text, shutdown_driver
+from suppliers_contacts import (
+    collect_contacts_from_websites,
+    collect_yandex_search_output_from_text,
+    shutdown_driver,
+)
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -85,14 +89,14 @@ def _upsert_suppliers(session: Session, task: LLMTask, merged_contacts: List[Dic
 
 
 def _collect_combined_contacts(terms_text: str, task_type: str) -> Dict:
-    yandex_result: Dict = {"queries": [], "search_output": [], "processed_contacts": []}
+    yandex_result: Dict = {"queries": [], "search_output": [], "processed_contacts": [], "tz_summary": None}
     perplexity_result: Dict = {"queries": [], "search_output": [], "processed_contacts": []}
     notes: List[str] = []
 
     if task_type == "supplier_search":
         try:
-            yandex_result = collect_contacts_from_text(terms_text)
-            notes.append("Yandex/Selenium обработан")
+            yandex_result = collect_yandex_search_output_from_text(terms_text)
+            notes.append("Yandex поиск обработан")
         except Exception as exc:  # noqa: BLE001
             logger.exception("Yandex provider failed")
             notes.append(f"Yandex недоступен: {exc}")
@@ -106,9 +110,30 @@ def _collect_combined_contacts(terms_text: str, task_type: str) -> Dict:
         if task_type == "supplier_search_perplexity":
             raise
 
-    combined_processed = (yandex_result.get("processed_contacts") or []) + (perplexity_result.get("processed_contacts") or [])
+    # 1) Merge only search websites (without crawling contacts yet).
     combined_search_output = (yandex_result.get("search_output") or []) + (perplexity_result.get("search_output") or [])
-    merged_contacts = merge_contacts(combined_processed, combined_search_output)
+    merged_websites = merge_contacts([], combined_search_output)
+
+    websites_to_crawl = [
+        {
+            "website": item.get("website"),
+            "source": item.get("source"),
+            "confidence": item.get("confidence"),
+            "dedup_key": item.get("dedup_key"),
+            "reason": item.get("reason"),
+        }
+        for item in merged_websites
+        if item.get("website")
+    ]
+
+    # 2) Crawl merged websites and collect contacts.
+    crawled = collect_contacts_from_websites(
+        technical_task_text=terms_text,
+        websites=websites_to_crawl,
+        tz_summary=yandex_result.get("tz_summary"),
+    )
+    merged_contacts = merge_contacts(crawled.get("processed_contacts") or [], crawled.get("search_output") or [])
+
     merged_search_output = [
         {
             "website": item.get("website"),
@@ -135,7 +160,7 @@ def _collect_combined_contacts(terms_text: str, task_type: str) -> Dict:
     return {
         "queries": (yandex_result.get("queries") or []) + (perplexity_result.get("queries") or []),
         "tech_task_excerpt": terms_text[:160],
-        "note": "; ".join(notes),
+        "note": "; ".join(notes + [f"Обход сайтов выполнен: {len(websites_to_crawl)} шт."]),
         "search_output": merged_search_output,
         "processed_contacts": merged_processed_contacts,
     }

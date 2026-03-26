@@ -41,7 +41,7 @@ SEARCH_QUERIES_SCHEMA: Dict[str, Any] = {
 }
 
 PERPLEXITY_SUPPLIERS_SCHEMA: Dict[str, Any] = {
-    "name": "perplexity_suppliers_extraction",
+    "name": "perplexity_supplier_sites_extraction",
     "schema": {
         "type": "object",
         "properties": {
@@ -51,21 +51,16 @@ PERPLEXITY_SUPPLIERS_SCHEMA: Dict[str, Any] = {
                     "type": "object",
                     "properties": {
                         "website": {"type": "string"},
-                        "name": {"type": ["string", "null"]},
-                        "emails": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        },
+                        "title": {"type": ["string", "null"]},
+                        "text": {"type": ["string", "null"]},
                         "reason": {"type": ["string", "null"]},
-                        "is_relevant": {"type": "boolean"},
                         "confidence": {"type": "number"},
                     },
                     "required": [
                         "website",
-                        "name",
-                        "emails",
+                        "title",
+                        "text",
                         "reason",
-                        "is_relevant",
                         "confidence",
                     ],
                     "additionalProperties": False,
@@ -280,9 +275,9 @@ def extract_structured_contacts_from_perplexity(raw_answer: str, terms_text: str
         {
             "role": "system",
             "content": (
-                "Ты извлекаешь структуру поставщиков из результата поиска. "
+                "Ты извлекаешь только сайты потенциальных поставщиков из результата поиска. "
                 "Возвращай только валидный JSON по схеме. "
-                "Если email не найден, верни пустой список emails."
+                "Не выдумывай email-адреса."
             ),
         },
         {
@@ -292,7 +287,8 @@ def extract_structured_contacts_from_perplexity(raw_answer: str, terms_text: str
                 f"{terms_text}\n\n"
                 "Ответ Perplexity:\n"
                 f"{raw_answer}\n\n"
-                "Выдели потенциальных поставщиков, сайты, email и оцени уверенность."
+                "Выдели только потенциальных поставщиков и их веб-сайты. "
+                "Сформируй короткий заголовок и текст-сниппет, максимально близкий к формату search results."
             ),
         },
     ]
@@ -312,7 +308,6 @@ def extract_structured_contacts_from_perplexity(raw_answer: str, terms_text: str
     payload = json.loads(output_text)
     suppliers = payload.get("suppliers") or []
 
-    processed_contacts: List[Dict[str, Any]] = []
     search_output: List[Dict[str, Any]] = []
     seen_sites: set[str] = set()
     for supplier in suppliers:
@@ -324,15 +319,6 @@ def extract_structured_contacts_from_perplexity(raw_answer: str, terms_text: str
             continue
         seen_sites.add(site_key)
 
-        emails = supplier.get("emails") or []
-        normalized_emails: List[str] = []
-        for email in emails:
-            if not isinstance(email, str):
-                continue
-            email_value = email.strip().lower()
-            if "@" in email_value and email_value not in normalized_emails:
-                normalized_emails.append(email_value)
-
         confidence = supplier.get("confidence")
         try:
             confidence_value = max(0.0, min(1.0, float(confidence)))
@@ -340,24 +326,20 @@ def extract_structured_contacts_from_perplexity(raw_answer: str, terms_text: str
             confidence_value = 0.5
 
         dedup_key = website.lower().rstrip("/")
-        common_fields = {
-            "website": website,
-            "emails": normalized_emails,
-            "source": "perplexity",
-            "confidence": confidence_value,
-            "dedup_key": dedup_key,
-        }
-        search_output.append(common_fields)
-        processed_contacts.append(
-            common_fields
-            | {
-                "is_relevant": bool(supplier.get("is_relevant", True)),
+        search_output.append(
+            {
+                "title": supplier.get("title"),
+                "text": supplier.get("text"),
+                "link": website,
+                "website": website,
                 "reason": supplier.get("reason"),
-                "name": supplier.get("name"),
+                "source": "perplexity",
+                "confidence": confidence_value,
+                "dedup_key": dedup_key,
             }
         )
 
     return {
         "search_output": search_output,
-        "processed_contacts": processed_contacts,
+        "processed_contacts": [],
     }

@@ -859,17 +859,26 @@ def company_validation(
         }
 
 
-def collect_contacts_from_text(
+def _safe_int_env(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    try:
+        return int(raw) if raw else default
+    except ValueError:
+        return default
+
+
+def collect_yandex_search_output_from_text(
     technical_task_text: str,
     query_docs_limit: Optional[int] = None,
-    save_results: bool = False,
 ) -> Dict[str, Any]:
-    """Run the full supplier contact ETL for a given technical task text."""
-
+    """
+    Stage 1: collect supplier websites from Yandex results.
+    Returns websites only (without crawling contacts).
+    """
     tz_summary = summarize_tz_for_single_supplier(technical_task_text)
     search_queries = tz_summary.get("search_queries", [])
     tz_for_validation = build_validation_tz(tz_summary)
-    query_docs_limit = query_docs_limit or int(os.environ.get("QUERY_DOCS_LIMIT", "3"))
+    query_docs_limit = query_docs_limit or _safe_int_env("QUERY_DOCS_LIMIT", 3)
 
     search_output: List[Dict[str, Any]] = []
     seen: set[str] = set()
@@ -877,34 +886,58 @@ def collect_contacts_from_text(
         results = yandex_search_suppliers(query)
         query_docs = 0
         for doc in results:
-            website = doc["link"]
-            if website in seen:
+            website = doc.get("link")
+            if not website or website in seen:
                 continue
-
             seen.add(website)
+
             try:
                 relevant, reason = doc_validation(tz_for_validation, doc=doc)
-            except Exception as exc:  # noqa: BLE001
+            except Exception:  # noqa: BLE001
                 continue
-
             if not relevant:
                 continue
 
-            try:
-                emails = parse_website(website)
-            except Exception:
-                emails = []
-
-            search_output.append({"website": website, "emails": emails, "reason": reason})
+            search_output.append(
+                {
+                    "title": doc.get("title"),
+                    "text": doc.get("text"),
+                    "link": website,
+                    "website": website,
+                    "source": "yandex",
+                    "reason": reason,
+                    "confidence": 0.7,
+                }
+            )
             query_docs += 1
             if query_docs >= query_docs_limit:
                 break
 
+    return {
+        "queries": search_queries,
+        "tech_task_excerpt": technical_task_text[:160],
+        "tz_summary": tz_summary,
+        "search_output": search_output,
+    }
+
+
+def collect_contacts_from_websites(
+    technical_task_text: str,
+    websites: List[Dict[str, Any]],
+    tz_summary: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Stage 2: crawl websites and collect emails/validation.
+    """
+    summary = tz_summary or summarize_tz_for_single_supplier(technical_task_text)
+    tz_for_validation = build_validation_tz(summary)
+
     processed_contacts: List[Dict[str, Any]] = []
-    seen = set()
-    for contact in tqdm(search_output):
-        website = contact["website"]
-        if website in seen:
+    search_output: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for site_item in tqdm(websites):
+        website = site_item.get("website") or site_item.get("link")
+        if not website or website in seen:
             continue
 
         main_page_content = ""
@@ -912,6 +945,11 @@ def collect_contacts_from_text(
         catalog_page_content = None
         about_success = False
         catalog_success = False
+
+        try:
+            emails = parse_website(website)
+        except Exception:
+            emails = []
 
         visit_website(website)
         main_page_1 = get_screenshot()
@@ -948,30 +986,64 @@ def collect_contacts_from_text(
             catalog_page_content=catalog_page_content if catalog_success else None,
         )
 
+        confidence = site_item.get("confidence")
+        try:
+            confidence_value = max(0.0, min(1.0, float(confidence)))
+        except (TypeError, ValueError):
+            confidence_value = 0.7 if validation_result.get("is_relevant") else 0.3
+
+        output_item = {
+            "website": website,
+            "emails": emails,
+            "source": site_item.get("source"),
+            "confidence": confidence_value,
+            "dedup_key": site_item.get("dedup_key"),
+        }
+        search_output.append(output_item)
         processed_contacts.append(
-            {
+            output_item
+            | {
                 "is_relevant": bool(validation_result.get("is_relevant", False)),
-                "reason": validation_result.get("reason"),
+                "reason": validation_result.get("reason") or site_item.get("reason"),
                 "name": validation_result.get("name"),
-                "website": website,
-                "emails": contact.get("emails", []),
             }
         )
-
         seen.add(website)
 
-    if save_results:
-        with open("processed_contacts.json", "w") as f:
-            f.write(json.dumps(processed_contacts, ensure_ascii=False))
-
-        with open("search_output.json", "w") as f:
-            f.write(json.dumps(search_output, ensure_ascii=False))
-
     return {
-        "queries": search_queries,
         "tech_task_excerpt": technical_task_text[:160],
         "search_output": search_output,
         "processed_contacts": processed_contacts,
+    }
+
+
+def collect_contacts_from_text(
+    technical_task_text: str,
+    query_docs_limit: Optional[int] = None,
+    save_results: bool = False,
+) -> Dict[str, Any]:
+    """Yandex-only legacy flow: search websites first, then crawl websites."""
+    yandex_search = collect_yandex_search_output_from_text(
+        technical_task_text,
+        query_docs_limit=query_docs_limit,
+    )
+    crawled = collect_contacts_from_websites(
+        technical_task_text,
+        websites=yandex_search.get("search_output", []),
+        tz_summary=yandex_search.get("tz_summary"),
+    )
+
+    if save_results:
+        with open("processed_contacts.json", "w") as f:
+            f.write(json.dumps(crawled.get("processed_contacts", []), ensure_ascii=False))
+        with open("search_output.json", "w") as f:
+            f.write(json.dumps(crawled.get("search_output", []), ensure_ascii=False))
+
+    return {
+        "queries": yandex_search.get("queries", []),
+        "tech_task_excerpt": technical_task_text[:160],
+        "search_output": crawled.get("search_output", []),
+        "processed_contacts": crawled.get("processed_contacts", []),
     }
 
 

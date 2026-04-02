@@ -43,6 +43,28 @@ body {
   margin-bottom: 12px;
 }
 
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-nav-btn {
+  margin-bottom: 0;
+  text-align: left;
+}
+
+.sidebar-nav-btn.active {
+  background: #334155;
+  border: 1px solid #6366f1;
+}
+
+.sidebar-logout-btn {
+  margin-top: 20px;
+  background: transparent !important;
+  border: 1px solid #334155 !important;
+}
+
 .linkish {
   background: transparent;
   border: none;
@@ -53,6 +75,28 @@ body {
 
 .main {
   padding: 32px;
+}
+
+.context-bar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.context-label {
+  color: #64748b;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.context-value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.context-selector {
+  min-width: 280px;
 }
 
 .card {
@@ -327,6 +371,13 @@ button.secondary {
   font-size: 16px;
 }
 
+.section-placeholder__box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+}
+
 .bid-card {
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   border: 1px solid #e2e8f0;
@@ -392,4 +443,28 @@ button.secondary {
 .bid-lot__param-name {
   font-weight: 600;
   color: #0f172a;
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    padding: 16px;
+  }
+
+  .main {
+    padding: 16px;
+  }
+
+  .context-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .context-selector {
+    min-width: 0;
+    width: 100%;
+  }
 }

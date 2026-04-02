@@ -298,6 +298,13 @@ function SupplierTable({
   );
 }
 
+const ACCOUNT_SECTIONS = [
+  { id: 'purchases', label: 'Закупки' },
+  { id: 'suppliers', label: 'Поставщики' },
+  { id: 'correspondence', label: 'Переписка' },
+  { id: 'proposals', label: 'Предложения' },
+];
+
 function App() {
   const storedToken = useMemo(() => localStorage.getItem('zakupai_token'), []);
   const storedUser = useMemo(() => localStorage.getItem('zakupai_user'), []);
@@ -306,6 +313,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [purchases, setPurchases] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [activeSection, setActiveSection] = useState(ACCOUNT_SECTIONS[0].id);
   const [suppliers, setSuppliers] = useState([]);
   const [contactsBySupplier, setContactsBySupplier] = useState({});
   const [message, setMessage] = useState('');
@@ -323,7 +331,6 @@ function App() {
   });
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [llmQueries, setLlmQueries] = useState(null);
-  const [emailDraft, setEmailDraft] = useState(null);
   const [purchaseDetailsExpanded, setPurchaseDetailsExpanded] = useState(false);
   const [selectedRows, setSelectedRows] = useState(new Set());
   const [lotsState, setLotsState] = useState({ status: 'queued', lots: [] });
@@ -483,7 +490,6 @@ function App() {
     if (selectedId && token) {
       loadSuppliers(selectedId);
       loadBids(selectedId);
-      setEmailDraft(null);
       setLlmQueries(null);
       setPurchaseDetailsExpanded(false);
       setLotsState({ status: 'queued', lots: [] });
@@ -714,20 +720,6 @@ function App() {
     }
   };
 
-  const buildDraft = async () => {
-    if (!selectedId) return;
-    setBusy(true);
-    setError('');
-    try {
-      const draft = await apiWithToken(`/purchases/${selectedId}/email-draft`, { method: 'POST' });
-      setEmailDraft(draft);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const sortedPurchases = useMemo(() => {
     return [...purchases].sort((a, b) => {
       const nameA = a.full_name || a.custom_name || '';
@@ -800,43 +792,83 @@ function App() {
           <br />
           <span style={{ fontSize: 12 }}>API: {API_URL}</span>
         </div>
-        <button className="linkish" onClick={handleLogout} disabled={busy}>
+        <nav className="sidebar-nav" aria-label="Разделы аккаунта">
+          {ACCOUNT_SECTIONS.map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              className={activeSection === section.id ? 'sidebar-nav-btn active' : 'sidebar-nav-btn'}
+              onClick={() => setActiveSection(section.id)}
+            >
+              {section.label}
+            </button>
+          ))}
+        </nav>
+        <button className="sidebar-logout-btn" onClick={handleLogout} disabled={busy}>
           Выйти
         </button>
       </aside>
       <main className="main">
-        <div className="card">
-          <h2 style={{ marginTop: 0 }}>Закупки</h2>
-          {message && <div className="alert" style={{ background: '#ecfdf3', color: '#166534' }}>{message}</div>}
-          {error && <div className="alert">{error}</div>}
-          <div className="list">
-            {showPurchaseProcessingCard && (
-              <div className="card" style={{ border: '1.5px dashed #cbd5e1' }}>
-                <h3 style={{ margin: '0 0 6px 0' }}>Новая закупка создаётся…</h3>
-                <p className="muted" style={{ marginBottom: 0 }}>
-                  Документ загружается и запускается извлечение лотов из ТЗ.
-                </p>
-              </div>
-            )}
-            {sortedPurchases.map((purchase) => (
-              <PurchaseCard
-                key={purchase.id}
-                purchase={purchase}
-                onSelect={() => setSelectedId(purchase.id)}
-                isActive={purchase.id === selectedId}
-              />
-            ))}
-            <button
-              type="button"
-              className="card create-card"
-              onClick={() => setShowPurchaseModal(true)}
-              disabled={busy}
+        <div className="card context-bar">
+          <div>
+            <div className="context-label">Активная закупка</div>
+            <div className="context-value">{selectedPurchase?.full_name || 'Не выбрана'}</div>
+          </div>
+          <div className="context-selector">
+            <label htmlFor="active-purchase-select" style={{ marginBottom: 6 }}>
+              Сменить закупку
+            </label>
+            <select
+              id="active-purchase-select"
+              value={selectedId || ''}
+              onChange={(e) => setSelectedId(e.target.value ? Number(e.target.value) : null)}
+              disabled={busy || purchases.length === 0}
             >
-              <div className="create-card__icon">＋</div>
-              <div className="create-card__text">Создать новую закупку</div>
-            </button>
+              <option value="">Выберите закупку</option>
+              {sortedPurchases.map((purchase) => (
+                <option key={purchase.id} value={purchase.id}>
+                  {purchase.full_name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
+
+        {message && <div className="alert" style={{ background: '#ecfdf3', color: '#166534' }}>{message}</div>}
+        {error && <div className="alert">{error}</div>}
+
+        {activeSection === 'purchases' && (
+          <div className="card">
+            <h2 style={{ marginTop: 0 }}>Закупки</h2>
+            <div className="list">
+              {showPurchaseProcessingCard && (
+                <div className="card" style={{ border: '1.5px dashed #cbd5e1' }}>
+                  <h3 style={{ margin: '0 0 6px 0' }}>Новая закупка создаётся…</h3>
+                  <p className="muted" style={{ marginBottom: 0 }}>
+                    Документ загружается и запускается извлечение лотов из ТЗ.
+                  </p>
+                </div>
+              )}
+              {sortedPurchases.map((purchase) => (
+                <PurchaseCard
+                  key={purchase.id}
+                  purchase={purchase}
+                  onSelect={() => setSelectedId(purchase.id)}
+                  isActive={purchase.id === selectedId}
+                />
+              ))}
+              <button
+                type="button"
+                className="card create-card"
+                onClick={() => setShowPurchaseModal(true)}
+                disabled={busy}
+              >
+                <div className="create-card__icon">＋</div>
+                <div className="create-card__text">Создать новую закупку</div>
+              </button>
+            </div>
+          </div>
+        )}
 
         {showPurchaseModal && (
           <div className="modal-overlay" role="dialog" aria-modal="true">
@@ -891,9 +923,20 @@ function App() {
           </div>
         )}
 
+        {!selectedPurchase && activeSection !== 'purchases' && (
+          <div className="card section-placeholder">
+            <h3 style={{ marginTop: 0 }}>Выберите активную закупку</h3>
+            <p className="muted" style={{ marginBottom: 0 }}>
+              Раздел «{ACCOUNT_SECTIONS.find((item) => item.id === activeSection)?.label}» показывает данные только по активной закупке.
+            </p>
+          </div>
+        )}
+
         {selectedPurchase && (
           <>
-            <div className="card">
+            {activeSection === 'purchases' && (
+              <>
+                <div className="card">
               <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div className="stack" style={{ alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
                   <h2 style={{ marginTop: 0, marginBottom: 6, flex: 1, minWidth: 0 }}>{selectedPurchase.full_name}</h2>
@@ -1107,7 +1150,12 @@ function App() {
               </div>
             )}
 
-            <div className="card">
+              </>
+            )}
+
+            {activeSection === 'suppliers' && (
+              <>
+                <div className="card">
               <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
                 <h3 style={{ margin: 0 }}>Поставщики</h3>
                 <div className="stack" style={{ alignItems: 'center', gap: 8 }}>
@@ -1233,7 +1281,7 @@ function App() {
               </div>
             )}
 
-            <div className="card">
+                <div className="card">
               <div className="stack" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
                 <h3 style={{ marginTop: 0, marginBottom: 0 }}>Поиск поставщиков</h3>
                 <div className="stack" style={{ alignItems: 'center', gap: 8 }}>
@@ -1277,44 +1325,29 @@ function App() {
               )}
             </div>
 
-            <div className="card">
+              </>
+            )}
+
+            {activeSection === 'correspondence' && (
+              <div className="card">
               <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0 }}>Письмо</h3>
-                <button className="secondary" onClick={buildDraft} disabled={busy}>
-                  Сгенерировать текст письма
-                </button>
+                <h3 style={{ margin: 0 }}>Переписка</h3>
               </div>
-
-              {emailDraft ? (
-                <>
-                  <div
-                    className="stack"
-                    style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: 12, gap: 12 }}
-                  >
-                    <div className="tag" aria-label="Тема письма">
-                      {emailDraft.subject}
-                    </div>
-                    <button
-                      type="button"
-                      className="copy-btn"
-                      onClick={() =>
-                        copyText(`Тема: ${emailDraft.subject}\n\n${emailDraft.body}`)
-                      }
-                      title="Скопировать текст письма"
-                    >
-                      Скопировать текст
-                    </button>
-                  </div>
-                  <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{emailDraft.body}</pre>
-                </>
-              ) : (
-                <p className="muted" style={{ marginTop: 12 }}>
-                  Сгенерируйте текст письма, чтобы получить готовый шаблон для отправки поставщикам.
+              <p className="muted" style={{ marginTop: 12, marginBottom: 8 }}>
+                Активная закупка: <strong>{selectedPurchase.full_name}</strong>
+              </p>
+              <div className="section-placeholder__box">
+                <h4 style={{ marginTop: 0 }}>Шаблон email (заглушка)</h4>
+                <p className="muted" style={{ marginBottom: 0 }}>
+                  Здесь будет модуль переписки и шаблонов писем. Пока доступен только placeholder.
                 </p>
-              )}
-            </div>
+              </div>
+              </div>
+            )}
 
-            <div className="card">
+            {activeSection === 'proposals' && (
+              <>
+                <div className="card">
               <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ margin: 0 }}>Предложения</h3>
                 <button className="secondary" onClick={() => setShowBidModal(true)} disabled={busy}>
@@ -1399,7 +1432,7 @@ function App() {
               </div>
             </div>
 
-            {showBidModal && (
+                {showBidModal && (
               <div className="modal-overlay" role="dialog" aria-modal="true">
                 <div className="modal" style={{ maxWidth: 720 }}>
                   <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1483,6 +1516,8 @@ function App() {
                   </form>
                 </div>
               </div>
+                )}
+              </>
             )}
           </>
         )}

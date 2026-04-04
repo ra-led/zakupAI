@@ -2,12 +2,14 @@ import json
 import logging
 import os
 import time
-from typing import Dict, List
+import math
+from typing import Dict, List, Optional, Tuple
 
+from openai import OpenAI
 from sqlmodel import Session, select
 
 from app.database import create_db_and_tables, engine
-from app.models import LLMTask, Purchase, Supplier, SupplierContact
+from app.models import BidLot, BidLotParameter, LLMTask, Lot, LotParameter, Purchase, Supplier, SupplierContact
 from app.search_providers.perplexity import search_suppliers_with_perplexity
 from app.supplier_import import merge_contacts
 from app.task_queue import TaskQueue
@@ -21,6 +23,11 @@ logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(me
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = float(os.getenv("ETL_POLL_INTERVAL", "5"))
+
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_EMBEDDING_MODEL = os.getenv("OPENROUTER_EMBEDDING_MODEL", "perplexity/pplx-embed-v1-4b")
+OPENROUTER_MATCH_MODEL = os.getenv("OPENROUTER_MATCH_MODEL", "openai/gpt-4o-mini")
+LOT_MATCH_MIN_CONFIDENCE = float(os.getenv("LOT_MATCH_MIN_CONFIDENCE", "0.45"))
 
 
 def _upsert_suppliers(session: Session, task: LLMTask, merged_contacts: List[Dict]) -> List[Dict]:
@@ -171,7 +178,252 @@ def _collect_combined_contacts(terms_text: str, task_type: str) -> Dict:
     }
 
 
+def _build_openrouter_client() -> OpenAI:
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured")
+    return OpenAI(base_url=OPENROUTER_BASE_URL, api_key=api_key)
+
+
+def _lot_to_text(name: str, parameters: List[Dict]) -> str:
+    params_text = "; ".join(
+        [
+            f"{item.get('name', '').strip()}: {item.get('value', '').strip()} {item.get('units', '').strip()}".strip()
+            for item in parameters
+        ]
+    )
+    return f"Лот: {name.strip()}\nПараметры: {params_text}".strip()
+
+
+def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
+    if not vec_a or not vec_b:
+        return -1.0
+    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    norm_a = math.sqrt(sum(a * a for a in vec_a))
+    norm_b = math.sqrt(sum(b * b for b in vec_b))
+    if norm_a == 0 or norm_b == 0:
+        return -1.0
+    return dot / (norm_a * norm_b)
+
+
+def _extract_json_payload(raw_content: str) -> Dict:
+    text = (raw_content or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return {}
+        try:
+            parsed = json.loads(text[start : end + 1])
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+
+
+def _classify_match(
+    client: OpenAI,
+    target_lot: Dict,
+    candidate_lots: List[Dict],
+) -> Tuple[Optional[int], float, str]:
+    target_text = _lot_to_text(target_lot.get("name", ""), target_lot.get("parameters", []))
+    candidate_lines = [
+        f"{candidate['id']}: {_lot_to_text(candidate.get('name', ''), candidate.get('parameters', []))}"
+        for candidate in candidate_lots
+    ]
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Ты сопоставляешь лот ТЗ с лотом коммерческого предложения. "
+                "Выбери только один id из списка кандидатов или null, если явного соответствия нет. "
+                "Ответ только JSON."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Лот ТЗ:\n"
+                f"{target_text}\n\n"
+                "Кандидаты из КП:\n"
+                f"{chr(10).join(candidate_lines)}\n\n"
+                "Верни JSON формата: "
+                '{"matched_candidate_id": <int|null>, "confidence": <0..1>, "reason": "<коротко>"}'
+            ),
+        },
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENROUTER_MATCH_MODEL,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+    except Exception:
+        response = client.chat.completions.create(
+            model=OPENROUTER_MATCH_MODEL,
+            messages=messages,
+            temperature=0,
+        )
+    content = response.choices[0].message.content if response.choices else ""
+    payload = _extract_json_payload(content or "")
+    candidate_ids = {candidate["id"] for candidate in candidate_lots}
+
+    matched_id = payload.get("matched_candidate_id")
+    if not isinstance(matched_id, int) or matched_id not in candidate_ids:
+        matched_id = None
+
+    try:
+        confidence = float(payload.get("confidence", 0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+    reason = str(payload.get("reason") or "")
+    return matched_id, confidence, reason
+
+
+def _build_lot_comparison_rows(session: Session, purchase_id: int, bid_id: int) -> Dict:
+    purchase_lots = session.exec(select(Lot).where(Lot.purchase_id == purchase_id).order_by(Lot.id)).all()
+    bid_lots = session.exec(select(BidLot).where(BidLot.bid_id == bid_id).order_by(BidLot.id)).all()
+
+    purchase_items = []
+    for lot in purchase_lots:
+        params = session.exec(select(LotParameter).where(LotParameter.lot_id == lot.id).order_by(LotParameter.id)).all()
+        purchase_items.append(
+            {
+                "id": lot.id,
+                "name": lot.name,
+                "parameters": [
+                    {"name": param.name, "value": param.value, "units": param.units}
+                    for param in params
+                ],
+            }
+        )
+
+    bid_items = []
+    for lot in bid_lots:
+        params = session.exec(select(BidLotParameter).where(BidLotParameter.bid_lot_id == lot.id).order_by(BidLotParameter.id)).all()
+        bid_items.append(
+            {
+                "id": lot.id,
+                "name": lot.name,
+                "price": lot.price,
+                "parameters": [
+                    {"name": param.name, "value": param.value, "units": param.units}
+                    for param in params
+                ],
+            }
+        )
+
+    if not purchase_items:
+        return {"rows": [], "note": "Лоты ТЗ не найдены"}
+    if not bid_items:
+        return {
+            "rows": [
+                {
+                    "lot_id": item["id"],
+                    "lot_name": item["name"],
+                    "lot_parameters": item["parameters"],
+                    "bid_lot_id": None,
+                    "bid_lot_name": None,
+                    "bid_lot_price": None,
+                    "bid_lot_parameters": [],
+                    "confidence": None,
+                    "reason": "Лоты КП не найдены",
+                }
+                for item in purchase_items
+            ],
+            "note": "Лоты КП не найдены",
+        }
+
+    client = _build_openrouter_client()
+    all_texts = [_lot_to_text(item["name"], item["parameters"]) for item in purchase_items] + [
+        _lot_to_text(item["name"], item["parameters"]) for item in bid_items
+    ]
+    embeddings_response = client.embeddings.create(
+        model=OPENROUTER_EMBEDDING_MODEL,
+        input=all_texts,
+        encoding_format="float",
+    )
+    indexed_vectors = sorted(embeddings_response.data, key=lambda item: item.index)
+    vectors = [item.embedding for item in indexed_vectors]
+    purchase_vectors = vectors[: len(purchase_items)]
+    bid_vectors = vectors[len(purchase_items) :]
+
+    bid_by_id = {item["id"]: item for item in bid_items}
+    rows = []
+    matched_count = 0
+
+    for idx, purchase_item in enumerate(purchase_items):
+        scored = []
+        for bid_idx, bid_item in enumerate(bid_items):
+            similarity = _cosine_similarity(purchase_vectors[idx], bid_vectors[bid_idx])
+            scored.append((similarity, bid_item["id"]))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        top_candidates_ids = [item[1] for item in scored[:3]]
+        top_candidates = [bid_by_id[candidate_id] for candidate_id in top_candidates_ids]
+
+        matched_id, confidence, reason = _classify_match(client, purchase_item, top_candidates)
+        if confidence < LOT_MATCH_MIN_CONFIDENCE:
+            matched_id = None
+        matched_item = bid_by_id.get(matched_id) if matched_id is not None else None
+        if matched_item:
+            matched_count += 1
+
+        rows.append(
+            {
+                "lot_id": purchase_item["id"],
+                "lot_name": purchase_item["name"],
+                "lot_parameters": purchase_item["parameters"],
+                "bid_lot_id": matched_item["id"] if matched_item else None,
+                "bid_lot_name": matched_item["name"] if matched_item else None,
+                "bid_lot_price": matched_item.get("price") if matched_item else None,
+                "bid_lot_parameters": matched_item["parameters"] if matched_item else [],
+                "confidence": confidence if matched_item else None,
+                "reason": reason or None,
+            }
+        )
+
+    return {
+        "rows": rows,
+        "note": f"Сопоставлено лотов: {matched_count} из {len(purchase_items)}",
+    }
+
+
+def _process_lot_comparison_task(task: LLMTask) -> None:
+    payload = TaskQueue._load_payload(task.input_text)
+    try:
+        purchase_id = int(payload.get("purchase_id") or task.purchase_id or 0)
+        bid_id = int(payload.get("bid_id") or task.bid_id or 0)
+    except (TypeError, ValueError):
+        purchase_id = 0
+        bid_id = 0
+    if not purchase_id or not bid_id:
+        raise RuntimeError("lot_comparison task requires purchase_id and bid_id")
+
+    with Session(engine) as session:
+        task_in_db = session.get(LLMTask, task.id)
+        if not task_in_db:
+            return
+
+        result = _build_lot_comparison_rows(session, purchase_id, bid_id)
+        task_in_db.output_text = json.dumps(result, ensure_ascii=False)
+        task_in_db.status = "completed"
+        session.add(task_in_db)
+        session.commit()
+
+
 def _process_task(task: LLMTask) -> None:
+    if task.task_type == "lot_comparison":
+        _process_lot_comparison_task(task)
+        return
+
     payload = TaskQueue._load_payload(task.input_text)
     terms_text = payload.get("terms_text", "")
 
@@ -217,7 +469,7 @@ def run_worker() -> None:
                 select(LLMTask)
                 .where(
                     LLMTask.status == "queued",
-                    LLMTask.task_type.in_(["supplier_search", "supplier_search_perplexity"]),
+                    LLMTask.task_type.in_(["supplier_search", "supplier_search_perplexity", "lot_comparison"]),
                 )
                 .order_by(LLMTask.created_at)
             ).first()

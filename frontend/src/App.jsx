@@ -350,6 +350,9 @@ function App() {
     bid_text: '',
   });
   const [bidFile, setBidFile] = useState(null);
+  const [comparisonByBid, setComparisonByBid] = useState({});
+  const [activeComparisonBidId, setActiveComparisonBidId] = useState(null);
+  const [comparisonBusyBidId, setComparisonBusyBidId] = useState(null);
 
   useEffect(() => {
     if (token) {
@@ -493,6 +496,9 @@ function App() {
       setLlmQueries(null);
       setPurchaseDetailsExpanded(false);
       setLotsState({ status: 'queued', lots: [] });
+      setComparisonByBid({});
+      setActiveComparisonBidId(null);
+      setComparisonBusyBidId(null);
 
       let isMounted = true;
       const fetchLots = async () => {
@@ -590,6 +596,42 @@ function App() {
   const selectedBidSupplierContacts = bidForm.supplier_id
     ? contactsBySupplier[Number(bidForm.supplier_id)] || []
     : [];
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const pollComparisonStatus = async (purchaseId, bidId) => {
+    for (let attempt = 0; attempt < 45; attempt += 1) {
+      const state = await apiWithToken(`/purchases/${purchaseId}/bids/${bidId}/comparison`);
+      if (state) {
+        setComparisonByBid((prev) => ({ ...prev, [bidId]: state }));
+      }
+      if (!state || (state.status !== 'queued' && state.status !== 'in_progress')) {
+        return state;
+      }
+      await sleep(2000);
+    }
+    return null;
+  };
+
+  const runBidComparison = async (bidId) => {
+    if (!selectedId || !bidId) return;
+    setActiveComparisonBidId(bidId);
+    setComparisonBusyBidId(bidId);
+    setError('');
+    try {
+      const started = await apiWithToken(`/purchases/${selectedId}/bids/${bidId}/comparison`, {
+        method: 'POST',
+      });
+      setComparisonByBid((prev) => ({ ...prev, [bidId]: started }));
+      if (started.status === 'queued' || started.status === 'in_progress') {
+        await pollComparisonStatus(selectedId, bidId);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setComparisonBusyBidId(null);
+    }
+  };
 
   const handleAuth = (newToken, email) => {
     localStorage.setItem('zakupai_token', newToken);
@@ -1371,7 +1413,14 @@ function App() {
                   </div>
                 ))}
                 {bids.map((bid) => (
-                  <div key={bid.id} className="card bid-card" style={{ marginBottom: 0 }}>
+                  <div
+                    key={bid.id}
+                    className="card bid-card"
+                    style={{
+                      marginBottom: 0,
+                      border: activeComparisonBidId === bid.id ? '1px solid #2563eb' : undefined,
+                    }}
+                  >
                     <div className="bid-card__header">
                       <div>
                         <div className="bid-card__title">Предложение</div>
@@ -1383,6 +1432,16 @@ function App() {
                         )}
                       </div>
                       <div className="tag">Лотов: {bid.lots?.length || 0}</div>
+                    </div>
+                    <div className="stack" style={{ justifyContent: 'flex-end', marginTop: 10 }}>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => runBidComparison(bid.id)}
+                        disabled={comparisonBusyBidId === bid.id}
+                      >
+                        {comparisonBusyBidId === bid.id ? 'Сравниваем…' : 'Сравнить'}
+                      </button>
                     </div>
                     <p className="muted">
                       {(bid.bid_text || '').length > 160
@@ -1431,6 +1490,109 @@ function App() {
                 </button>
               </div>
             </div>
+
+                <div className="card">
+                  <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0 }}>Сравнение</h3>
+                    {activeComparisonBidId && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => runBidComparison(activeComparisonBidId)}
+                        disabled={comparisonBusyBidId === activeComparisonBidId}
+                      >
+                        {comparisonBusyBidId === activeComparisonBidId ? 'Сравниваем…' : 'Сравнить'}
+                      </button>
+                    )}
+                  </div>
+                  {!activeComparisonBidId && (
+                    <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                      Выберите предложение и нажмите «Сравнить».
+                    </p>
+                  )}
+                  {activeComparisonBidId && comparisonByBid[activeComparisonBidId]?.status === 'failed' && (
+                    <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                      Сравнение завершилось ошибкой. Повторите попытку.
+                    </p>
+                  )}
+                  {activeComparisonBidId &&
+                    (comparisonByBid[activeComparisonBidId]?.status === 'queued' ||
+                      comparisonByBid[activeComparisonBidId]?.status === 'in_progress') && (
+                      <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                        Сравнение выполняется в ETL…
+                      </p>
+                    )}
+                  {activeComparisonBidId && comparisonByBid[activeComparisonBidId]?.status === 'completed' && (
+                    <>
+                      <p className="muted" style={{ marginTop: 12 }}>
+                        {comparisonByBid[activeComparisonBidId]?.note || 'Сравнение завершено'}
+                      </p>
+                      {comparisonByBid[activeComparisonBidId]?.rows?.length ? (
+                        <div className="comparison-table-wrap">
+                          <table className="table comparison-table">
+                            <thead>
+                              <tr>
+                                <th style={{ width: '50%' }}>Параметры из ТЗ</th>
+                                <th style={{ width: '50%' }}>Параметры из КП</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {comparisonByBid[activeComparisonBidId].rows.map((row) => (
+                                <tr key={`cmp-row-${row.lot_id}`}>
+                                  <td>
+                                    <div className="comparison-lot-name">{row.lot_name}</div>
+                                    {row.lot_parameters?.length ? (
+                                      <ul className="comparison-param-list">
+                                        {row.lot_parameters.map((param, idx) => (
+                                          <li key={`cmp-left-${row.lot_id}-${idx}`}>
+                                            <span className="bid-lot__param-name">{param.name}:</span> {param.value}
+                                            {param.units ? ` ${param.units}` : ''}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <div className="muted">Параметры не указаны.</div>
+                                    )}
+                                  </td>
+                                  <td>
+                                    {row.bid_lot_id ? (
+                                      <>
+                                        <div className="comparison-lot-name">{row.bid_lot_name}</div>
+                                        {row.bid_lot_price && (
+                                          <div className="muted" style={{ marginTop: 4 }}>
+                                            Цена: {row.bid_lot_price}
+                                          </div>
+                                        )}
+                                        {row.bid_lot_parameters?.length ? (
+                                          <ul className="comparison-param-list">
+                                            {row.bid_lot_parameters.map((param, idx) => (
+                                              <li key={`cmp-right-${row.lot_id}-${idx}`}>
+                                                <span className="bid-lot__param-name">{param.name}:</span> {param.value}
+                                                {param.units ? ` ${param.units}` : ''}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        ) : (
+                                          <div className="muted">Параметры не указаны.</div>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <div className="muted">Совпадение не найдено.</div>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p className="muted" style={{ marginBottom: 0 }}>
+                          Лоты для сравнения не найдены.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
 
                 {showBidModal && (
               <div className="modal-overlay" role="dialog" aria-modal="true">

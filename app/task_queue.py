@@ -184,7 +184,17 @@ class TaskQueue:
             with Session(engine) as session:
                 task = session.exec(
                     select(LLMTask)
-                    .where(LLMTask.status == "queued")
+                    .where(
+                        LLMTask.status == "queued",
+                        LLMTask.task_type.in_(
+                            [
+                                "supplier_search",
+                                "supplier_search_perplexity",
+                                "lots_extraction",
+                                "bid_lots_extraction",
+                            ]
+                        ),
+                    )
                     .order_by(LLMTask.created_at)
                 ).first()
                 if not task:

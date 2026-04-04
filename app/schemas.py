@@ -255,3 +255,24 @@ class BidRead(BaseModel):
     bid_text: str
     created_at: datetime
     lots: List[BidLotRead] = Field(default_factory=list)
+
+
+class LotComparisonRowRead(BaseModel):
+    lot_id: int
+    lot_name: str
+    lot_parameters: List[LotParameterRead] = Field(default_factory=list)
+    bid_lot_id: Optional[int] = None
+    bid_lot_name: Optional[str] = None
+    bid_lot_price: Optional[str] = None
+    bid_lot_parameters: List[BidLotParameterRead] = Field(default_factory=list)
+    confidence: Optional[float] = None
+    reason: Optional[str] = None
+
+
+class LotComparisonResponse(BaseModel):
+    task_id: int
+    status: str
+    bid_id: int
+    created_at: datetime
+    note: Optional[str] = None
+    rows: List[LotComparisonRowRead] = Field(default_factory=list)

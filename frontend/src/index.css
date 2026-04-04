@@ -445,6 +445,26 @@ button.secondary {
   color: #0f172a;
 }
 
+.comparison-table-wrap {
+  margin-top: 8px;
+  overflow-x: auto;
+}
+
+.comparison-table td {
+  vertical-align: top;
+}
+
+.comparison-lot-name {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.comparison-param-list {
+  margin: 0;
+  padding-left: 16px;
+  color: #475569;
+}
+
 @media (max-width: 960px) {
   .app-shell {
     grid-template-columns: 1fr;

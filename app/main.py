@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime, timedelta
 from typing import List
 from urllib.parse import urlparse
@@ -42,6 +43,8 @@ from .schemas import (
     EmailMessageRead,
     LLMTaskCreate,
     LLMTaskRead,
+    LotComparisonResponse,
+    LotComparisonRowRead,
     LotCreate,
     LotsResponse,
     LotRead,
@@ -249,6 +252,65 @@ def _load_bid_lots(session, bid_id: int) -> list[BidLotRead]:
     return lot_reads
 
 
+def _safe_json_dict(raw_text: str | None) -> dict:
+    if not raw_text:
+        return {}
+    try:
+        payload = json.loads(raw_text)
+        return payload if isinstance(payload, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _serialize_lot_comparison(task: LLMTask, bid_id: int) -> LotComparisonResponse:
+    payload = _safe_json_dict(task.output_text)
+    rows_payload = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    rows: list[LotComparisonRowRead] = []
+    for item in rows_payload:
+        if not isinstance(item, dict):
+            continue
+        lot_params = item.get("lot_parameters") if isinstance(item.get("lot_parameters"), list) else []
+        bid_lot_params = item.get("bid_lot_parameters") if isinstance(item.get("bid_lot_parameters"), list) else []
+        rows.append(
+            LotComparisonRowRead(
+                lot_id=int(item.get("lot_id", 0)),
+                lot_name=str(item.get("lot_name") or ""),
+                lot_parameters=[
+                    LotParameterRead(
+                        name=str(param.get("name") or ""),
+                        value=str(param.get("value") or ""),
+                        units=str(param.get("units") or ""),
+                    )
+                    for param in lot_params
+                    if isinstance(param, dict)
+                ],
+                bid_lot_id=int(item["bid_lot_id"]) if item.get("bid_lot_id") is not None else None,
+                bid_lot_name=str(item.get("bid_lot_name")) if item.get("bid_lot_name") is not None else None,
+                bid_lot_price=str(item.get("bid_lot_price")) if item.get("bid_lot_price") is not None else None,
+                bid_lot_parameters=[
+                    BidLotParameterRead(
+                        name=str(param.get("name") or ""),
+                        value=str(param.get("value") or ""),
+                        units=str(param.get("units") or ""),
+                    )
+                    for param in bid_lot_params
+                    if isinstance(param, dict)
+                ],
+                confidence=float(item["confidence"]) if item.get("confidence") is not None else None,
+                reason=str(item.get("reason")) if item.get("reason") is not None else None,
+            )
+        )
+
+    return LotComparisonResponse(
+        task_id=task.id or 0,
+        status=task.status,
+        bid_id=bid_id,
+        created_at=task.created_at,
+        note=str(payload.get("note")) if payload.get("note") is not None else None,
+        rows=rows,
+    )
+
+
 @app.get("/purchases/{purchase_id}/lots", response_model=LotsResponse)
 def get_purchase_lots(
     purchase_id: int,
@@ -406,6 +468,82 @@ def list_bids(
         )
         for bid in bids
     ]
+
+
+@app.post("/purchases/{purchase_id}/bids/{bid_id}/comparison", response_model=LotComparisonResponse)
+def start_bid_lot_comparison(
+    purchase_id: int,
+    bid_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> LotComparisonResponse:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    bid = session.get(Bid, bid_id)
+    if not bid or bid.purchase_id != purchase_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bid not found")
+
+    existing = session.exec(
+        select(LLMTask)
+        .where(
+            LLMTask.purchase_id == purchase_id,
+            LLMTask.bid_id == bid_id,
+            LLMTask.task_type == "lot_comparison",
+            LLMTask.status.in_(["queued", "in_progress"]),
+        )
+        .order_by(LLMTask.created_at.desc())
+    ).first()
+    if existing:
+        return _serialize_lot_comparison(existing, bid_id)
+
+    task = LLMTask(
+        purchase_id=purchase_id,
+        bid_id=bid_id,
+        task_type="lot_comparison",
+        input_text=json.dumps(
+            {
+                "purchase_id": purchase_id,
+                "bid_id": bid_id,
+            },
+            ensure_ascii=False,
+        ),
+        status="queued",
+    )
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return _serialize_lot_comparison(task, bid_id)
+
+
+@app.get("/purchases/{purchase_id}/bids/{bid_id}/comparison", response_model=LotComparisonResponse | None)
+def get_bid_lot_comparison(
+    purchase_id: int,
+    bid_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> LotComparisonResponse | None:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    bid = session.get(Bid, bid_id)
+    if not bid or bid.purchase_id != purchase_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bid not found")
+
+    task = session.exec(
+        select(LLMTask)
+        .where(
+            LLMTask.purchase_id == purchase_id,
+            LLMTask.bid_id == bid_id,
+            LLMTask.task_type == "lot_comparison",
+        )
+        .order_by(LLMTask.created_at.desc())
+    ).first()
+    if not task:
+        return None
+    return _serialize_lot_comparison(task, bid_id)
 
 
 @app.post("/purchases/{purchase_id}/suppliers", response_model=SupplierRead, status_code=status.HTTP_201_CREATED)

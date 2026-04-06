@@ -471,8 +471,14 @@ button.secondary {
   overflow-x: auto;
 }
 
+.comparison-table-stack {
+  display: grid;
+  gap: 12px;
+}
+
 .comparison-table td {
   vertical-align: top;
+  white-space: pre-wrap;
 }
 
 .comparison-lot-name {

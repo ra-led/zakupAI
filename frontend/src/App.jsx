@@ -873,6 +873,18 @@ function App() {
   };
   const activeBidLotRows = flattenBidLotsForTable(activeBid);
   const comparisonRenderRows = buildComparisonRows(activeComparisonRows, activeComparisonBid);
+  const buildComparisonTableRows = (row) => {
+    const leftValues = (row.lot_parameters || []).map((param) => formatParamText(param));
+    const rightValues = [
+      ...(row.bid_lot_price ? [`Цена: ${row.bid_lot_price}`] : []),
+      ...((row.bid_lot_parameters || []).map((param) => formatParamText(param))),
+    ];
+    const length = Math.max(leftValues.length, rightValues.length, 1);
+    return Array.from({ length }, (_, index) => ({
+      left: leftValues[index] || '',
+      right: rightValues[index] || '',
+    }));
+  };
   const renderParamPreview = (param) => {
     const units = param.units ? ` ${param.units}` : '';
     return truncateText(`${param.name}: ${param.value}${units}`, 50);
@@ -1556,7 +1568,7 @@ function App() {
                         }}
                         disabled={comparisonBusyBidId === activeBid.id}
                       >
-                        {comparisonBusyBidId === activeBid.id ? 'Сравниваем…' : 'Сравнить'}
+                        {comparisonBusyBidId === activeBid.id ? 'Сравниваем…' : 'Сравнить с ТЗ'}
                       </button>
                     )}
                   </div>
@@ -1608,19 +1620,6 @@ function App() {
                 <div className="card">
                   <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                     <h3 style={{ margin: 0 }}>Сравнение</h3>
-                    {activeComparisonBid && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => {
-                          setActiveComparisonBidId(activeComparisonBid.id);
-                          runBidComparison(activeComparisonBid.id);
-                        }}
-                        disabled={comparisonBusyBidId === activeComparisonBid.id}
-                      >
-                        {comparisonBusyBidId === activeComparisonBid.id ? 'Сравниваем…' : 'Сравнить'}
-                      </button>
-                    )}
                   </div>
                   {!activeComparisonBid && (
                     <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
@@ -1645,68 +1644,34 @@ function App() {
                         {comparisonByBid[activeComparisonBidId]?.note || 'Сравнение завершено'}
                       </p>
                       {comparisonRenderRows.length ? (
-                        <div className="comparison-table-wrap">
-                          <table className="table comparison-table">
-                            <thead>
-                              <tr>
-                                <th style={{ width: '50%' }}>Параметры из ТЗ</th>
-                                <th style={{ width: '50%' }}>Параметры из КП</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {comparisonRenderRows.map((row, rowIdx) => (
-                                <tr key={`cmp-row-${row.lot_id || 'bid-only'}-${row.bid_lot_id || 'none'}-${rowIdx}`}>
-                                  <td>
-                                    {row.lot_name ? (
-                                      <>
-                                        <div className="comparison-lot-name">{row.lot_name}</div>
-                                        {row.lot_parameters?.length ? (
-                                          <ul className="comparison-param-list">
-                                            {row.lot_parameters.map((param, idx) => (
-                                              <li key={`cmp-left-${row.lot_id || 'none'}-${idx}`}>
-                                                <span className="bid-lot__param-name">{param.name}:</span> {param.value}
-                                                {param.units ? ` ${param.units}` : ''}
-                                              </li>
-                                            ))}
-                                          </ul>
-                                        ) : (
-                                          <div className="muted">Параметры не указаны.</div>
-                                        )}
-                                      </>
-                                    ) : (
-                                      <div className="muted"></div>
-                                    )}
-                                  </td>
-                                  <td>
-                                    {row.bid_lot_id ? (
-                                      <>
-                                        <div className="comparison-lot-name">{row.bid_lot_name}</div>
-                                        {row.bid_lot_price && (
-                                          <div className="muted" style={{ marginTop: 4 }}>
-                                            Цена: {row.bid_lot_price}
-                                          </div>
-                                        )}
-                                        {row.bid_lot_parameters?.length ? (
-                                          <ul className="comparison-param-list">
-                                            {row.bid_lot_parameters.map((param, idx) => (
-                                              <li key={`cmp-right-${row.bid_lot_id || 'none'}-${idx}`}>
-                                                <span className="bid-lot__param-name">{param.name}:</span> {param.value}
-                                                {param.units ? ` ${param.units}` : ''}
-                                              </li>
-                                            ))}
-                                          </ul>
-                                        ) : (
-                                          <div className="muted">Параметры не указаны.</div>
-                                        )}
-                                      </>
-                                    ) : (
-                                      <div className="muted">Совпадение не найдено.</div>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                        <div className="comparison-table-stack">
+                          {comparisonRenderRows.map((row, rowIdx) => (
+                            <div
+                              key={`cmp-row-${row.lot_id || 'bid-only'}-${row.bid_lot_id || 'none'}-${rowIdx}`}
+                              className="comparison-table-wrap"
+                            >
+                              <table className="table comparison-table">
+                                <thead>
+                                  <tr>
+                                    <th style={{ width: '50%' }}>
+                                      {row.lot_name || 'В ТЗ нет соответствующего лота'}
+                                    </th>
+                                    <th style={{ width: '50%' }}>
+                                      {row.bid_lot_name || 'В КП нет соответствующего лота'}
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {buildComparisonTableRows(row).map((line, lineIdx) => (
+                                    <tr key={`cmp-line-${rowIdx}-${lineIdx}`}>
+                                      <td>{line.left}</td>
+                                      <td>{line.right}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ))}
                         </div>
                       ) : (
                         <p className="muted" style={{ marginBottom: 0 }}>

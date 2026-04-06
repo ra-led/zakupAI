@@ -28,6 +28,7 @@ OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/ap
 OPENROUTER_EMBEDDING_MODEL = os.getenv("OPENROUTER_EMBEDDING_MODEL", "perplexity/pplx-embed-v1-4b")
 OPENROUTER_MATCH_MODEL = os.getenv("OPENROUTER_MATCH_MODEL", "openai/gpt-4o-mini")
 LOT_MATCH_MIN_CONFIDENCE = float(os.getenv("LOT_MATCH_MIN_CONFIDENCE", "0.45"))
+LOT_PARAM_MATCH_MIN_CONFIDENCE = float(os.getenv("LOT_PARAM_MATCH_MIN_CONFIDENCE", "0.45"))
 
 
 def _upsert_suppliers(session: Session, task: LLMTask, merged_contacts: List[Dict]) -> List[Dict]:
@@ -195,6 +196,13 @@ def _lot_to_text(name: str, parameters: List[Dict]) -> str:
     return f"Лот: {name.strip()}\nПараметры: {params_text}".strip()
 
 
+def _param_to_text(param: Dict) -> str:
+    return (
+        f"{param.get('name', '').strip()}: {param.get('value', '').strip()}"
+        f"{(' ' + param.get('units', '').strip()) if param.get('units', '').strip() else ''}"
+    ).strip()
+
+
 def _cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
     if not vec_a or not vec_b:
         return -1.0
@@ -288,6 +296,150 @@ def _classify_match(
     return matched_id, confidence, reason
 
 
+def _classify_param_match(
+    client: OpenAI,
+    target_param: Dict,
+    candidate_params: List[Dict],
+) -> Tuple[Optional[int], float, str]:
+    target_text = _param_to_text(target_param)
+    candidate_lines = [f"{candidate['id']}: {_param_to_text(candidate)}" for candidate in candidate_params]
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Ты сопоставляешь характеристику из ТЗ с характеристикой из КП. "
+                "Выбери один id из списка кандидатов или null, если соответствия нет. "
+                "Ответ только JSON."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                "Характеристика ТЗ:\n"
+                f"{target_text}\n\n"
+                "Кандидаты из КП:\n"
+                f"{chr(10).join(candidate_lines)}\n\n"
+                "Верни JSON формата: "
+                '{"matched_candidate_id": <int|null>, "confidence": <0..1>, "reason": "<коротко>"}'
+            ),
+        },
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENROUTER_MATCH_MODEL,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+    except Exception:
+        response = client.chat.completions.create(
+            model=OPENROUTER_MATCH_MODEL,
+            messages=messages,
+            temperature=0,
+        )
+    content = response.choices[0].message.content if response.choices else ""
+    payload = _extract_json_payload(content or "")
+    candidate_ids = {candidate["id"] for candidate in candidate_params}
+
+    matched_id = payload.get("matched_candidate_id")
+    if not isinstance(matched_id, int) or matched_id not in candidate_ids:
+        matched_id = None
+
+    try:
+        confidence = float(payload.get("confidence", 0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+    reason = str(payload.get("reason") or "")
+    return matched_id, confidence, reason
+
+
+def _build_characteristic_rows(
+    client: OpenAI,
+    lot_params: List[Dict],
+    bid_lot_params: List[Dict],
+) -> List[Dict]:
+    if not lot_params and not bid_lot_params:
+        return []
+    if not lot_params:
+        return [{"left_text": "", "right_text": _param_to_text(param), "status": "unmatched_kp"} for param in bid_lot_params]
+    if not bid_lot_params:
+        return [{"left_text": _param_to_text(param), "right_text": "", "status": "unmatched_tz"} for param in lot_params]
+
+    lot_params_indexed = [{"id": idx, **param} for idx, param in enumerate(lot_params)]
+    bid_params_indexed = [{"id": idx, **param} for idx, param in enumerate(bid_lot_params)]
+
+    all_texts = [_param_to_text(item) for item in lot_params_indexed] + [_param_to_text(item) for item in bid_params_indexed]
+    embeddings_response = client.embeddings.create(
+        model=OPENROUTER_EMBEDDING_MODEL,
+        input=all_texts,
+        encoding_format="float",
+    )
+    indexed_vectors = sorted(embeddings_response.data, key=lambda item: item.index)
+    vectors = [item.embedding for item in indexed_vectors]
+    lot_vectors = vectors[: len(lot_params_indexed)]
+    bid_vectors = vectors[len(lot_params_indexed) :]
+
+    bid_by_id = {item["id"]: item for item in bid_params_indexed}
+    matched_pairs: List[Tuple[Dict, Dict]] = []
+    unmatched_lot_params: List[Dict] = []
+    used_bid_ids: set[int] = set()
+
+    for idx, lot_param in enumerate(lot_params_indexed):
+        scored = []
+        for bid_idx, bid_param in enumerate(bid_params_indexed):
+            if bid_param["id"] in used_bid_ids:
+                continue
+            similarity = _cosine_similarity(lot_vectors[idx], bid_vectors[bid_idx])
+            scored.append((similarity, bid_param["id"]))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        top_candidate_ids = [item[1] for item in scored[:3]]
+        top_candidates = [bid_by_id[candidate_id] for candidate_id in top_candidate_ids]
+        if not top_candidates:
+            unmatched_lot_params.append(lot_param)
+            continue
+
+        matched_id, confidence, _ = _classify_param_match(client, lot_param, top_candidates)
+        if matched_id is None or confidence < LOT_PARAM_MATCH_MIN_CONFIDENCE or matched_id in used_bid_ids:
+            unmatched_lot_params.append(lot_param)
+            continue
+
+        matched_bid_param = bid_by_id[matched_id]
+        used_bid_ids.add(matched_id)
+        matched_pairs.append((lot_param, matched_bid_param))
+
+    unmatched_bid_params = [param for param in bid_params_indexed if param["id"] not in used_bid_ids]
+
+    rows: List[Dict] = []
+    rows.extend(
+        {
+            "left_text": _param_to_text(param),
+            "right_text": "",
+            "status": "unmatched_tz",
+        }
+        for param in unmatched_lot_params
+    )
+    rows.extend(
+        {
+            "left_text": _param_to_text(left_param),
+            "right_text": _param_to_text(right_param),
+            "status": "matched",
+        }
+        for left_param, right_param in matched_pairs
+    )
+    rows.extend(
+        {
+            "left_text": "",
+            "right_text": _param_to_text(param),
+            "status": "unmatched_kp",
+        }
+        for param in unmatched_bid_params
+    )
+    return rows
+
+
 def _build_lot_comparison_rows(session: Session, purchase_id: int, bid_id: int) -> Dict:
     purchase_lots = session.exec(select(Lot).where(Lot.purchase_id == purchase_id).order_by(Lot.id)).all()
     bid_lots = session.exec(select(BidLot).where(BidLot.bid_id == bid_id).order_by(BidLot.id)).all()
@@ -336,6 +488,14 @@ def _build_lot_comparison_rows(session: Session, purchase_id: int, bid_id: int) 
                     "bid_lot_parameters": [],
                     "confidence": None,
                     "reason": "Лоты КП не найдены",
+                    "characteristic_rows": [
+                        {
+                            "left_text": _param_to_text(param),
+                            "right_text": "",
+                            "status": "unmatched_tz",
+                        }
+                        for param in item["parameters"]
+                    ],
                 }
                 for item in purchase_items
             ],
@@ -387,6 +547,18 @@ def _build_lot_comparison_rows(session: Session, purchase_id: int, bid_id: int) 
                 "bid_lot_parameters": matched_item["parameters"] if matched_item else [],
                 "confidence": confidence if matched_item else None,
                 "reason": reason or None,
+                "characteristic_rows": (
+                    _build_characteristic_rows(client, purchase_item["parameters"], matched_item["parameters"])
+                    if matched_item
+                    else [
+                        {
+                            "left_text": _param_to_text(param),
+                            "right_text": "",
+                            "status": "unmatched_tz",
+                        }
+                        for param in purchase_item["parameters"]
+                    ]
+                ),
             }
         )
 

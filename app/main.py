@@ -33,6 +33,7 @@ from .models import (
 )
 from .schemas import (
     BidCreate,
+    ComparisonCharacteristicRowRead,
     BidLotParameterRead,
     BidLotRead,
     BidRead,
@@ -298,6 +299,19 @@ def _serialize_lot_comparison(task: LLMTask, bid_id: int) -> LotComparisonRespon
                 ],
                 confidence=float(item["confidence"]) if item.get("confidence") is not None else None,
                 reason=str(item.get("reason")) if item.get("reason") is not None else None,
+                characteristic_rows=[
+                    ComparisonCharacteristicRowRead(
+                        left_text=str(row.get("left_text") or ""),
+                        right_text=str(row.get("right_text") or ""),
+                        status=(
+                            row.get("status")
+                            if row.get("status") in ("unmatched_tz", "matched", "unmatched_kp")
+                            else "matched"
+                        ),
+                    )
+                    for row in (item.get("characteristic_rows") or [])
+                    if isinstance(row, dict)
+                ],
             )
         )
 

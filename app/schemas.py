@@ -257,6 +257,12 @@ class BidRead(BaseModel):
     lots: List[BidLotRead] = Field(default_factory=list)
 
 
+class ComparisonCharacteristicRowRead(BaseModel):
+    left_text: str = ""
+    right_text: str = ""
+    status: Literal["unmatched_tz", "matched", "unmatched_kp"] = "matched"
+
+
 class LotComparisonRowRead(BaseModel):
     lot_id: int
     lot_name: str
@@ -267,6 +273,7 @@ class LotComparisonRowRead(BaseModel):
     bid_lot_parameters: List[BidLotParameterRead] = Field(default_factory=list)
     confidence: Optional[float] = None
     reason: Optional[str] = None
+    characteristic_rows: List[ComparisonCharacteristicRowRead] = Field(default_factory=list)
 
 
 class LotComparisonResponse(BaseModel):

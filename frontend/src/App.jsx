@@ -868,21 +868,33 @@ function App() {
       confidence: null,
       reason: null,
       is_unmatched_bid_only: true,
+      characteristic_rows: (lot.parameters || []).map((param) => ({
+        left_text: '',
+        right_text: formatParamText(param),
+        status: 'unmatched_kp',
+      })),
     }));
     return [...(comparisonRows || []), ...unmatchedRows];
   };
   const activeBidLotRows = flattenBidLotsForTable(activeBid);
   const comparisonRenderRows = buildComparisonRows(activeComparisonRows, activeComparisonBid);
   const buildComparisonTableRows = (row) => {
+    if (row.characteristic_rows?.length) {
+      return row.characteristic_rows.map((item) => ({
+        left: item.left_text || '',
+        right: item.right_text || '',
+        status: item.status || 'matched',
+      }));
+    }
     const leftValues = (row.lot_parameters || []).map((param) => formatParamText(param));
     const rightValues = [
-      ...(row.bid_lot_price ? [`Цена: ${row.bid_lot_price}`] : []),
       ...((row.bid_lot_parameters || []).map((param) => formatParamText(param))),
     ];
     const length = Math.max(leftValues.length, rightValues.length, 1);
     return Array.from({ length }, (_, index) => ({
       left: leftValues[index] || '',
       right: rightValues[index] || '',
+      status: 'matched',
     }));
   };
   const renderParamPreview = (param) => {
@@ -1663,7 +1675,16 @@ function App() {
                                 </thead>
                                 <tbody>
                                   {buildComparisonTableRows(row).map((line, lineIdx) => (
-                                    <tr key={`cmp-line-${rowIdx}-${lineIdx}`}>
+                                    <tr
+                                      key={`cmp-line-${rowIdx}-${lineIdx}`}
+                                      className={
+                                        line.status === 'unmatched_tz'
+                                          ? 'comparison-row-unmatched-tz'
+                                          : line.status === 'unmatched_kp'
+                                            ? 'comparison-row-unmatched-kp'
+                                            : ''
+                                      }
+                                    >
                                       <td>{line.left}</td>
                                       <td>{line.right}</td>
                                     </tr>

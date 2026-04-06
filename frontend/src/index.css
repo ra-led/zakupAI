@@ -481,6 +481,14 @@ button.secondary {
   white-space: pre-wrap;
 }
 
+.comparison-row-unmatched-tz td {
+  color: #b91c1c;
+}
+
+.comparison-row-unmatched-kp td {
+  color: #6b7280;
+}
+
 .comparison-lot-name {
   font-weight: 700;
   margin-bottom: 6px;

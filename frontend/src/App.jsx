@@ -1682,7 +1682,7 @@ function App() {
                                           ? 'comparison-row-unmatched-tz'
                                           : line.status === 'unmatched_kp'
                                             ? 'comparison-row-unmatched-kp'
-                                            : ''
+                                            : 'comparison-row-matched'
                                       }
                                     >
                                       <td>{line.left}</td>

@@ -485,6 +485,10 @@ button.secondary {
   color: #b91c1c;
 }
 
+.comparison-row-matched td {
+  color: #15803d;
+}
+
 .comparison-row-unmatched-kp td {
   color: #6b7280;
 }

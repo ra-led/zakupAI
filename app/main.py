@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import delete as sa_delete
 from sqlmodel import select
 
 from io import BytesIO
@@ -217,54 +218,42 @@ def update_purchase(
 
 
 def _delete_bid_related(session, bid_id: int) -> None:
-    bid_lots = session.exec(select(BidLot).where(BidLot.bid_id == bid_id)).all()
-    for bid_lot in bid_lots:
-        lot_params = session.exec(select(BidLotParameter).where(BidLotParameter.bid_lot_id == bid_lot.id)).all()
-        for param in lot_params:
-            session.delete(param)
-        session.delete(bid_lot)
+    bid_lot_ids = session.exec(select(BidLot.id).where(BidLot.bid_id == bid_id)).all()
+    if bid_lot_ids:
+        session.exec(sa_delete(BidLotParameter).where(BidLotParameter.bid_lot_id.in_(bid_lot_ids)))
 
-    bid_tasks = session.exec(select(LLMTask).where(LLMTask.bid_id == bid_id)).all()
-    for task in bid_tasks:
-        session.delete(task)
-
-    bid = session.get(Bid, bid_id)
-    if bid:
-        session.delete(bid)
+    session.exec(sa_delete(BidLot).where(BidLot.bid_id == bid_id))
+    session.exec(sa_delete(LLMTask).where(LLMTask.bid_id == bid_id))
+    session.exec(sa_delete(Bid).where(Bid.id == bid_id))
 
 
 def _delete_purchase_related(session, purchase_id: int) -> None:
-    purchase_tasks = session.exec(
-        select(LLMTask).where(
+    bid_ids = session.exec(select(Bid.id).where(Bid.purchase_id == purchase_id)).all()
+    if bid_ids:
+        bid_lot_ids = session.exec(select(BidLot.id).where(BidLot.bid_id.in_(bid_ids))).all()
+        if bid_lot_ids:
+            session.exec(sa_delete(BidLotParameter).where(BidLotParameter.bid_lot_id.in_(bid_lot_ids)))
+        session.exec(sa_delete(BidLot).where(BidLot.bid_id.in_(bid_ids)))
+        session.exec(sa_delete(LLMTask).where(LLMTask.bid_id.in_(bid_ids)))
+        session.exec(sa_delete(Bid).where(Bid.id.in_(bid_ids)))
+
+    session.exec(
+        sa_delete(LLMTask).where(
             LLMTask.purchase_id == purchase_id,
             LLMTask.bid_id.is_(None),
         )
-    ).all()
-    for task in purchase_tasks:
-        session.delete(task)
+    )
+    session.exec(sa_delete(EmailMessage).where(EmailMessage.purchase_id == purchase_id))
 
-    emails = session.exec(select(EmailMessage).where(EmailMessage.purchase_id == purchase_id)).all()
-    for email in emails:
-        session.delete(email)
+    lot_ids = session.exec(select(Lot.id).where(Lot.purchase_id == purchase_id)).all()
+    if lot_ids:
+        session.exec(sa_delete(LotParameter).where(LotParameter.lot_id.in_(lot_ids)))
+    session.exec(sa_delete(Lot).where(Lot.purchase_id == purchase_id))
 
-    lots = session.exec(select(Lot).where(Lot.purchase_id == purchase_id)).all()
-    for lot in lots:
-        lot_params = session.exec(select(LotParameter).where(LotParameter.lot_id == lot.id)).all()
-        for param in lot_params:
-            session.delete(param)
-        session.delete(lot)
-
-    bids = session.exec(select(Bid).where(Bid.purchase_id == purchase_id)).all()
-    for bid in bids:
-        if bid.id is not None:
-            _delete_bid_related(session, bid.id)
-
-    suppliers = session.exec(select(Supplier).where(Supplier.purchase_id == purchase_id)).all()
-    for supplier in suppliers:
-        contacts = session.exec(select(SupplierContact).where(SupplierContact.supplier_id == supplier.id)).all()
-        for contact in contacts:
-            session.delete(contact)
-        session.delete(supplier)
+    supplier_ids = session.exec(select(Supplier.id).where(Supplier.purchase_id == purchase_id)).all()
+    if supplier_ids:
+        session.exec(sa_delete(SupplierContact).where(SupplierContact.supplier_id.in_(supplier_ids)))
+    session.exec(sa_delete(Supplier).where(Supplier.purchase_id == purchase_id))
 
 
 @app.delete("/purchases/{purchase_id}", status_code=status.HTTP_204_NO_CONTENT)

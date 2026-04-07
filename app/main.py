@@ -216,6 +216,72 @@ def update_purchase(
     return purchase
 
 
+def _delete_bid_related(session, bid_id: int) -> None:
+    bid_lots = session.exec(select(BidLot).where(BidLot.bid_id == bid_id)).all()
+    for bid_lot in bid_lots:
+        lot_params = session.exec(select(BidLotParameter).where(BidLotParameter.bid_lot_id == bid_lot.id)).all()
+        for param in lot_params:
+            session.delete(param)
+        session.delete(bid_lot)
+
+    bid_tasks = session.exec(select(LLMTask).where(LLMTask.bid_id == bid_id)).all()
+    for task in bid_tasks:
+        session.delete(task)
+
+    bid = session.get(Bid, bid_id)
+    if bid:
+        session.delete(bid)
+
+
+def _delete_purchase_related(session, purchase_id: int) -> None:
+    purchase_tasks = session.exec(
+        select(LLMTask).where(
+            LLMTask.purchase_id == purchase_id,
+            LLMTask.bid_id.is_(None),
+        )
+    ).all()
+    for task in purchase_tasks:
+        session.delete(task)
+
+    emails = session.exec(select(EmailMessage).where(EmailMessage.purchase_id == purchase_id)).all()
+    for email in emails:
+        session.delete(email)
+
+    lots = session.exec(select(Lot).where(Lot.purchase_id == purchase_id)).all()
+    for lot in lots:
+        lot_params = session.exec(select(LotParameter).where(LotParameter.lot_id == lot.id)).all()
+        for param in lot_params:
+            session.delete(param)
+        session.delete(lot)
+
+    bids = session.exec(select(Bid).where(Bid.purchase_id == purchase_id)).all()
+    for bid in bids:
+        if bid.id is not None:
+            _delete_bid_related(session, bid.id)
+
+    suppliers = session.exec(select(Supplier).where(Supplier.purchase_id == purchase_id)).all()
+    for supplier in suppliers:
+        contacts = session.exec(select(SupplierContact).where(SupplierContact.supplier_id == supplier.id)).all()
+        for contact in contacts:
+            session.delete(contact)
+        session.delete(supplier)
+
+
+@app.delete("/purchases/{purchase_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_purchase(
+    purchase_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> None:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    _delete_purchase_related(session, purchase_id)
+    session.delete(purchase)
+    session.commit()
+
+
 def _load_lots(session, purchase_id: int) -> list[LotRead]:
     lots = session.exec(select(Lot).where(Lot.purchase_id == purchase_id)).all()
     lot_reads: list[LotRead] = []
@@ -482,6 +548,25 @@ def list_bids(
         )
         for bid in bids
     ]
+
+
+@app.delete("/purchases/{purchase_id}/bids/{bid_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_bid(
+    purchase_id: int,
+    bid_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> None:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    bid = session.get(Bid, bid_id)
+    if not bid or bid.purchase_id != purchase_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bid not found")
+
+    _delete_bid_related(session, bid_id)
+    session.commit()
 
 
 @app.post("/purchases/{purchase_id}/bids/{bid_id}/comparison", response_model=LotComparisonResponse)

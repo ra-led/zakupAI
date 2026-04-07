@@ -178,7 +178,7 @@ function AuthPanel({ onAuth, busy }) {
   );
 }
 
-function PurchaseCard({ purchase, onSelect, isActive }) {
+function PurchaseCard({ purchase, onSelect, isActive, onDelete, busy }) {
   const SUMMARY_LIMIT = 100;
   const terms = purchase.terms_text || '';
   const preview = terms.length > SUMMARY_LIMIT ? `${terms.slice(0, SUMMARY_LIMIT)}…` : terms;
@@ -195,6 +195,20 @@ function PurchaseCard({ purchase, onSelect, isActive }) {
           {preview}
         </p>
       )}
+      <div style={{ marginTop: 10 }}>
+        <button
+          type="button"
+          className="linkish"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+          disabled={busy}
+          style={{ color: '#b91c1c', padding: 0 }}
+        >
+          Удалить закупку
+        </button>
+      </div>
     </div>
   );
 }
@@ -575,6 +589,68 @@ function App() {
       setError(err.message);
     } finally {
       setPendingBids((prev) => prev.filter((item) => item.id !== tempId));
+      setBusy(false);
+    }
+  };
+
+  const deletePurchase = async (purchaseId) => {
+    const target = purchases.find((item) => item.id === purchaseId);
+    const label = target?.full_name || `#${purchaseId}`;
+    const approved = window.confirm(`Удалить закупку «${label}»? Это действие нельзя отменить.`);
+    if (!approved) return;
+
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiWithToken(`/purchases/${purchaseId}`, { method: 'DELETE' });
+      const nextPurchases = purchases.filter((item) => item.id !== purchaseId);
+      setPurchases(nextPurchases);
+      if (selectedId === purchaseId) {
+        setSelectedId(nextPurchases[0]?.id || null);
+        if (nextPurchases.length === 0) {
+          setSuppliers([]);
+          setContactsBySupplier({});
+          setBids([]);
+          setActiveBidId(null);
+          setActiveComparisonBidId(null);
+          setComparisonByBid({});
+        }
+      }
+      setMessage('Закупка удалена');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteBid = async (bidId) => {
+    if (!selectedId) return;
+    const approved = window.confirm('Удалить это предложение? Это действие нельзя отменить.');
+    if (!approved) return;
+
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiWithToken(`/purchases/${selectedId}/bids/${bidId}`, { method: 'DELETE' });
+      const nextBids = bids.filter((item) => item.id !== bidId);
+      setBids(nextBids);
+      if (activeBidId === bidId) {
+        const fallbackBidId = nextBids[0]?.id || null;
+        setActiveBidId(fallbackBidId);
+        setActiveComparisonBidId(fallbackBidId);
+      }
+      setComparisonByBid((prev) => {
+        const next = { ...prev };
+        delete next[bidId];
+        return next;
+      });
+      setMessage('Предложение удалено');
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setBusy(false);
     }
   };
@@ -1020,6 +1096,8 @@ function App() {
                   purchase={purchase}
                   onSelect={() => setSelectedId(purchase.id)}
                   isActive={purchase.id === selectedId}
+                  onDelete={() => deletePurchase(purchase.id)}
+                  busy={busy}
                 />
               ))}
               <button
@@ -1540,20 +1618,40 @@ function App() {
                   )}
                   <div className="bid-selector-list">
                     {bids.map((bid) => (
-                      <button
+                      <div
                         key={bid.id}
-                        type="button"
                         className={`bid-selector-card${activeBidId === bid.id ? ' active' : ''}`}
                         onClick={() => {
                           setActiveBidId(bid.id);
                           setActiveComparisonBidId(bid.id);
                         }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setActiveBidId(bid.id);
+                            setActiveComparisonBidId(bid.id);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
                       >
                         <div className="bid-card__title">Предложение</div>
                         <div className="bid-card__supplier">{bid.supplier_name || 'Поставщик не указан'}</div>
                         <div className="muted">Лотов: {bid.lots?.length || 0}</div>
                         {bid.supplier_contact && <div className="muted">Контакт: {bid.supplier_contact}</div>}
-                      </button>
+                        <button
+                          type="button"
+                          className="linkish"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deleteBid(bid.id);
+                          }}
+                          disabled={busy}
+                          style={{ color: '#b91c1c', marginTop: 8, padding: 0 }}
+                        >
+                          Удалить предложение
+                        </button>
+                      </div>
                     ))}
                     <button
                       type="button"

@@ -219,7 +219,7 @@ def extract_lots(terms_text: str) -> Dict[str, Any]:
             model=model,
             messages=messages,
             response_format={"type": "json_schema", "json_schema": LOTS_SCHEMA},
-            max_completion_tokens=2000,
+            max_completion_tokens=5000,
         )
     except Exception as exc:  # noqa: BLE001
         print(f"[lots_extraction] openai_request_failed: {exc}")

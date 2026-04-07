@@ -1,0 +1,1442 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>zakupAI — AI-проверка заявок и нацрежима для закупщиков</title>
+  <meta name="description" content="AI сверяет КП с ТЗ по характеристикам и проверяет нацрежим. Поиск поставщиков и запрос КП — в том же контуре. Запустите пилот на своих данных.">
+  <meta name="theme-color" content="#f8f7f5">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Commissioner:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #f8f7f5;
+      --bg-alt: #efeee9;
+      --surface: #fefefe;
+      --text: #1a1f36;
+      --text-2: #4a4f63;
+      --text-3: #7b7f8e;
+      --accent: #5b6abf;
+      --accent-hover: #4a59ae;
+      --accent-subtle: #eceefb;
+      --teal: #3bb8a8;
+      --teal-dark: #2d9a8c;
+      --teal-subtle: #e6f6f4;
+      --gradient: linear-gradient(135deg, #5b6abf 0%, #3bb8a8 100%);
+      --border: #dfddd8;
+      --border-light: #eae8e3;
+      --radius: 8px;
+      --radius-lg: 14px;
+      --radius-xl: 20px;
+      --shadow-sm: 0 1px 2px rgba(26,31,54,0.04);
+      --shadow: 0 2px 8px rgba(26,31,54,0.06);
+      --shadow-lg: 0 8px 30px rgba(26,31,54,0.08);
+      --danger: #c44b3b;
+      --danger-subtle: #fbefed;
+      --font-display: 'Space Grotesk', sans-serif;
+      --font-body: 'Commissioner', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-body);
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.65;
+      font-size: clamp(1rem, 1.1vw, 1.0625rem);
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ── NAV ── */
+    .nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 0 clamp(20px, 4vw, 48px);
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(248,247,245,0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.3s, background 0.3s;
+    }
+
+    .nav.scrolled {
+      border-bottom-color: var(--border);
+      background: rgba(248,247,245,0.95);
+    }
+
+    .nav-logo {
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .nav-logo span { color: var(--teal); }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-2);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--text); }
+
+    .nav-cta {
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 600;
+      color: #fefefe !important;
+      background: var(--text);
+      padding: 8px 20px;
+      border-radius: var(--radius);
+      transition: background 0.2s;
+    }
+
+    .nav-cta:hover { background: #2a3050; }
+
+    .nav-burger {
+      display: none;
+      background: none;
+      border: none;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .nav-burger i {
+      display: block;
+      width: 20px;
+      height: 2px;
+      background: var(--text);
+      border-radius: 1px;
+      transition: transform 0.3s, opacity 0.3s;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      padding: clamp(120px, 16vh, 180px) clamp(20px, 4vw, 48px) clamp(60px, 10vh, 100px);
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: clamp(40px, 5vw, 80px);
+      align-items: center;
+    }
+
+    .hero-content { max-width: 520px; }
+
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-subtle);
+      padding: 6px 14px;
+      border-radius: 20px;
+      margin-bottom: 24px;
+      letter-spacing: 0.02em;
+    }
+
+    .hero-tag::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      background: var(--teal);
+      border-radius: 50%;
+    }
+
+    .hero h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2.2rem, 4.5vw, 3.4rem);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      margin-bottom: 20px;
+    }
+
+    .hero-sub {
+      font-size: clamp(1rem, 1.2vw, 1.1rem);
+      color: var(--text-2);
+      line-height: 1.7;
+      margin-bottom: 36px;
+      max-width: 460px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      font-family: var(--font-display);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      color: #fefefe;
+      background: var(--gradient);
+      padding: 14px 28px;
+      border-radius: var(--radius);
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(91,106,191,0.25);
+    }
+
+    .btn-secondary {
+      font-family: var(--font-display);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-2);
+      background: none;
+      padding: 14px 8px;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .btn-secondary:hover { color: var(--text); }
+    .btn-secondary svg { transition: transform 0.2s; }
+    .btn-secondary:hover svg { transform: translateX(2px); }
+
+    /* App preview */
+    .hero-visual {
+      position: relative;
+    }
+
+    .app-frame {
+      background: var(--surface);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-lg), 0 0 0 1px var(--border-light);
+      overflow: hidden;
+    }
+
+    .app-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .app-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--border);
+    }
+
+    .app-url {
+      flex: 1;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-3);
+      font-family: var(--font-body);
+    }
+
+    .app-screen {
+      padding: 16px;
+    }
+
+    .app-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border-light);
+      margin-bottom: 14px;
+    }
+
+    .app-tab {
+      padding: 8px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-3);
+      border-bottom: 2px solid transparent;
+    }
+
+    .app-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .app-table {
+      width: 100%;
+      font-size: 11px;
+      border-collapse: collapse;
+    }
+
+    .app-table th {
+      text-align: left;
+      padding: 6px 10px;
+      font-weight: 600;
+      color: var(--text-3);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .app-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text-2);
+    }
+
+    .app-match {
+      color: var(--teal-dark);
+      font-weight: 500;
+    }
+
+    .app-mismatch {
+      color: var(--danger);
+      font-weight: 500;
+    }
+
+    .app-partial {
+      color: var(--warning, #b8860b);
+      font-weight: 500;
+    }
+
+    .hero-visual-accent {
+      position: absolute;
+      width: 200px;
+      height: 200px;
+      background: var(--gradient);
+      opacity: 0.07;
+      border-radius: 50%;
+      filter: blur(60px);
+      top: -40px;
+      right: -40px;
+      pointer-events: none;
+    }
+
+    /* ── SECTION BASICS ── */
+    .section {
+      padding: clamp(60px, 10vh, 100px) clamp(20px, 4vw, 48px);
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-family: var(--font-display);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: clamp(1.8rem, 3.5vw, 2.6rem);
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.025em;
+      margin-bottom: 16px;
+    }
+
+    .section-desc {
+      font-size: clamp(1rem, 1.2vw, 1.1rem);
+      color: var(--text-2);
+      max-width: 560px;
+      line-height: 1.7;
+    }
+
+    /* ── PROBLEM ── */
+    .problems-section {
+      background: var(--text);
+      color: #fefefe;
+      margin: 0;
+      max-width: none;
+      padding: clamp(60px, 10vh, 100px) clamp(20px, 4vw, 48px);
+    }
+
+    .problems-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .problems-section .section-label { color: var(--teal); }
+    .problems-section .section-title { color: #fefefe; }
+    .problems-section .section-desc { color: rgba(255,255,255,0.6); }
+
+    .problems-grid {
+      margin-top: 48px;
+      display: grid;
+      gap: 0;
+    }
+
+    .problem-row {
+      display: grid;
+      grid-template-columns: 56px 1fr auto;
+      gap: 20px;
+      align-items: baseline;
+      padding: 24px 0;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .problem-row:last-child {
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .problem-num {
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.25);
+    }
+
+    .problem-text {
+      font-size: clamp(1rem, 1.2vw, 1.1rem);
+      color: rgba(255,255,255,0.85);
+      line-height: 1.6;
+    }
+
+    .problem-text strong {
+      color: #fefefe;
+      font-weight: 600;
+    }
+
+    .problem-cost {
+      font-family: var(--font-display);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--teal);
+      background: rgba(59,184,168,0.1);
+      padding: 6px 14px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    /* ── CONVEYOR ── */
+    .conveyor-grid {
+      margin-top: 56px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      position: relative;
+    }
+
+    .conveyor-step {
+      padding: 32px 28px;
+      position: relative;
+      border-left: 1px solid var(--border);
+    }
+
+    .conveyor-step:first-child { border-left: none; }
+
+    .conveyor-num {
+      font-family: var(--font-display);
+      font-size: 48px;
+      font-weight: 700;
+      color: var(--bg-alt);
+      line-height: 1;
+      margin-bottom: 16px;
+      letter-spacing: -0.03em;
+    }
+
+    .conveyor-icon {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      margin-bottom: 14px;
+    }
+
+    .conveyor-name {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .conveyor-desc {
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    .conveyor-arrow {
+      position: absolute;
+      right: -8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      color: var(--accent);
+      z-index: 2;
+    }
+
+    .conveyor-step:last-child .conveyor-arrow { display: none; }
+
+    .conveyor-status {
+      margin-top: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+
+    .conveyor-status.ready {
+      color: var(--teal-dark);
+      background: var(--teal-subtle);
+    }
+
+    .conveyor-status.soon {
+      color: var(--text-3);
+      background: var(--bg-alt);
+    }
+
+    /* ── HOW IT WORKS ── */
+    .steps-grid {
+      margin-top: 56px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 32px;
+      counter-reset: step;
+    }
+
+    .step {
+      counter-increment: step;
+      position: relative;
+    }
+
+    .step::before {
+      content: counter(step, decimal-leading-zero);
+      font-family: var(--font-display);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+      display: block;
+      margin-bottom: 16px;
+    }
+
+    .step-visual {
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border-light);
+      margin-bottom: 20px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .step-visual-inner {
+      width: 100%;
+      height: 100%;
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      justify-content: center;
+    }
+
+    /* Step 1: Upload */
+    .step-upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      text-align: center;
+      color: var(--text-3);
+      font-size: 12px;
+    }
+
+    .step-upload-zone .icon { font-size: 24px; margin-bottom: 6px; }
+
+    /* Step 2: Suppliers found */
+    .step-supplier-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: var(--bg);
+      border-radius: 6px;
+      font-size: 11px;
+    }
+
+    .step-supplier-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Step 3: Send */
+    .step-letter-block {
+      background: var(--bg);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 10px;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    .step-send-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+
+    .step-send-btn {
+      font-size: 10px;
+      font-weight: 600;
+      color: #fefefe;
+      background: var(--gradient);
+      padding: 5px 12px;
+      border-radius: 4px;
+    }
+
+    /* Step 4: Results */
+    .step-result-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 10px;
+      font-size: 10px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .step-result-row:last-child { border-bottom: none; }
+
+    .step h3 {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
+    }
+
+    .step p {
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    /* ── NUMBERS ── */
+    .numbers-section {
+      background: var(--surface);
+      max-width: none;
+      margin: 0;
+      padding: clamp(60px, 10vh, 100px) clamp(20px, 4vw, 48px);
+      border-top: 1px solid var(--border-light);
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .numbers-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .numbers-grid {
+      margin-top: 48px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+    }
+
+    .number-item {
+      padding: 0 28px;
+      border-left: 1px solid var(--border);
+    }
+
+    .number-item:first-child {
+      border-left: none;
+      padding-left: 0;
+    }
+
+    .number-value {
+      font-family: var(--font-display);
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      margin-bottom: 8px;
+      color: var(--teal-dark);
+      white-space: nowrap;
+    }
+
+    .number-label {
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.5;
+    }
+
+    .number-compare {
+      margin-top: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-3);
+    }
+
+    .number-compare s {
+      text-decoration: line-through;
+      color: var(--danger);
+      font-size: 15px;
+      margin-right: 4px;
+    }
+
+    /* ── SECURITY ── */
+    .security-layout {
+      margin-top: 48px;
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: clamp(24px, 4vw, 48px);
+      align-items: start;
+    }
+
+    .security-points {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .security-point {
+      display: grid;
+      grid-template-columns: 40px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .security-icon {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-3);
+    }
+
+    .security-point h4 {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .security-point p {
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    .security-diagram {
+      background: var(--surface);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+    }
+
+    .sec-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .sec-flow-step {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+    }
+
+    .sec-flow-badge {
+      flex-shrink: 0;
+      width: 90px;
+      padding: 6px 0;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 4px;
+    }
+
+    .sec-flow-badge.local {
+      background: var(--teal-subtle);
+      color: var(--teal-dark);
+    }
+
+    .sec-flow-badge.cloud {
+      background: var(--accent-subtle);
+      color: var(--accent);
+    }
+
+    .sec-flow-arrow {
+      color: var(--text-3);
+      font-size: 12px;
+      padding-left: 42px;
+    }
+
+    /* ── CTA ── */
+    .cta-section {
+      max-width: none;
+      margin: 0;
+      padding: clamp(80px, 12vh, 120px) clamp(20px, 4vw, 48px);
+      text-align: center;
+      background: var(--text);
+      color: #fefefe;
+    }
+
+    .cta-inner {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .cta-section .section-title {
+      color: #fefefe;
+      margin-bottom: 16px;
+    }
+
+    .cta-sub {
+      color: rgba(255,255,255,0.55);
+      font-size: 16px;
+      line-height: 1.7;
+      margin-bottom: 36px;
+    }
+
+    .cta-btn {
+      font-family: var(--font-display);
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      background: #fefefe;
+      padding: 16px 36px;
+      border-radius: var(--radius);
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .cta-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+
+    .cta-note {
+      margin-top: 16px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.35);
+    }
+
+    /* ── FOOTER ── */
+    .footer {
+      padding: 40px clamp(20px, 4vw, 48px);
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .footer-logo {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .footer-logo span { color: var(--teal); }
+
+    .footer-text {
+      font-size: 13px;
+      color: var(--text-3);
+    }
+
+    /* ── REVEAL ANIMATIONS ── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+                  transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: none;
+    }
+
+    .reveal-delay-1 { transition-delay: 0.08s; }
+    .reveal-delay-2 { transition-delay: 0.16s; }
+    .reveal-delay-3 { transition-delay: 0.24s; }
+    .reveal-delay-4 { transition-delay: 0.32s; }
+
+    .hero-content > * {
+      opacity: 0;
+      transform: translateY(20px);
+      animation: heroIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .hero-content > *:nth-child(1) { animation-delay: 0.1s; }
+    .hero-content > *:nth-child(2) { animation-delay: 0.2s; }
+    .hero-content > *:nth-child(3) { animation-delay: 0.3s; }
+    .hero-content > *:nth-child(4) { animation-delay: 0.4s; }
+
+    .hero-visual {
+      opacity: 0;
+      transform: translateY(30px) scale(0.98);
+      animation: heroIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
+    }
+
+    @keyframes heroIn {
+      to { opacity: 1; transform: none; }
+    }
+
+    /* ── RESPONSIVE: TABLET ── */
+    @media (max-width: 1024px) {
+      .hero { grid-template-columns: 1fr; gap: 48px; }
+      .hero-content { max-width: 600px; }
+      .conveyor-grid { grid-template-columns: repeat(2, 1fr); }
+      .conveyor-step { border-left: none; border-top: 1px solid var(--border); }
+      .conveyor-step:nth-child(-n+2) { border-top: none; }
+      .conveyor-arrow { display: none; }
+      .steps-grid { grid-template-columns: repeat(2, 1fr); }
+      .numbers-grid { grid-template-columns: repeat(2, 1fr); gap: 32px 24px; }
+      .number-item { border-left: none; padding: 0; }
+      .security-layout { grid-template-columns: 1fr; }
+      .security-diagram { margin-top: 8px; }
+    }
+
+    /* ── RESPONSIVE: MOBILE ── */
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .nav-burger { display: flex; }
+
+      .nav-links.open {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: 64px;
+        left: 0;
+        right: 0;
+        background: var(--bg);
+        padding: 20px clamp(20px, 4vw, 48px);
+        border-bottom: 1px solid var(--border);
+        gap: 16px;
+        box-shadow: var(--shadow-lg);
+      }
+
+      .hero { padding-top: 100px; padding-bottom: 40px; }
+      .hero-content { max-width: 100%; }
+
+      /* Hide app preview on small screens — it's unreadable */
+      .hero-visual { display: none; }
+
+      .hero h1 { font-size: clamp(1.75rem, 7vw, 2.4rem); }
+
+      .btn-primary {
+        width: 100%;
+        justify-content: center;
+        padding: 16px 28px;
+      }
+
+      .btn-secondary {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .conveyor-grid { grid-template-columns: 1fr; }
+      .conveyor-step {
+        border-top: 1px solid var(--border);
+        padding: 24px 0;
+      }
+      .conveyor-step:first-child { border-top: none; }
+      .conveyor-num { font-size: 36px; }
+
+      .steps-grid { grid-template-columns: 1fr; }
+      .step-visual { aspect-ratio: 3/2; }
+
+      .numbers-grid { grid-template-columns: repeat(2, 1fr); gap: 28px 16px; }
+      .number-item { padding: 0; }
+      .number-value { font-size: clamp(1.6rem, 6vw, 2.2rem); }
+
+      .problem-row {
+        grid-template-columns: 40px 1fr;
+        gap: 12px;
+      }
+      .problem-cost {
+        grid-column: 2;
+      }
+
+      .security-diagram { padding: 20px; }
+
+      .cta-btn {
+        padding: 18px 32px;
+        font-size: 15px;
+        width: 100%;
+        justify-content: center;
+      }
+
+      .footer-inner {
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+      }
+    }
+
+    /* ── RESPONSIVE: SMALL MOBILE ── */
+    @media (max-width: 420px) {
+      .numbers-grid { grid-template-columns: 1fr; gap: 24px; }
+      .number-item {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .number-value { margin-bottom: 0; }
+
+      .problem-row { grid-template-columns: 1fr; }
+      .problem-num { display: none; }
+      .problem-cost { grid-column: 1; }
+
+      .sec-flow-step { flex-wrap: wrap; gap: 8px; }
+      .sec-flow-badge { width: auto; padding: 4px 10px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav class="nav" id="nav">
+    <a href="#" class="nav-logo">zakup<span>AI</span></a>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="#solution">Возможности</a></li>
+      <li><a href="#how">Как работает</a></li>
+      <li><a href="#numbers">Результаты</a></li>
+      <li><a href="#security">Безопасность</a></li>
+      <li><a href="#pilot" class="nav-cta">Запустить пилот</a></li>
+    </ul>
+    <button class="nav-burger" id="burger" aria-label="Меню">
+      <i></i><i></i><i></i>
+    </button>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-content">
+      <div class="hero-tag">Пилотная программа — места ограничены</div>
+      <h1>Проверьте, что вам реально предложили — до решения комиссии</h1>
+      <p class="hero-sub">AI сверяет КП с ТЗ по характеристикам и проверяет нацрежим за минуты вместо дней. Поиск поставщиков и запрос КП — в том же контуре.</p>
+      <div class="hero-actions">
+        <a href="#pilot" class="btn-primary">Запустить пилот на своих данных</a>
+        <a href="#solution" class="btn-secondary">Как это работает <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 12l4-4-4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></a>
+      </div>
+    </div>
+
+    <div class="hero-visual">
+      <div class="hero-visual-accent"></div>
+      <div class="app-frame">
+        <div class="app-bar">
+          <div class="app-dot"></div>
+          <div class="app-dot"></div>
+          <div class="app-dot"></div>
+          <div class="app-url">app.zakupai.tech</div>
+        </div>
+        <div class="app-screen">
+          <div class="app-tabs">
+            <div class="app-tab">Поиск поставщиков</div>
+            <div class="app-tab">Письма и КП</div>
+            <div class="app-tab active">Сравнение ТЗ и КП</div>
+            <div class="app-tab">Нацрежим</div>
+          </div>
+          <table class="app-table">
+            <thead>
+              <tr>
+                <th>Характеристика</th>
+                <th>Требование ТЗ</th>
+                <th>Предложение КП</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Модель</td>
+                <td>PowerEdge R750</td>
+                <td class="app-match">&#10003; PowerEdge R750</td>
+              </tr>
+              <tr>
+                <td>RAM</td>
+                <td>64 ГБ DDR4</td>
+                <td class="app-match">&#10003; 64 ГБ DDR4 ECC</td>
+              </tr>
+              <tr>
+                <td>Накопитель</td>
+                <td>SSD 960 ГБ</td>
+                <td class="app-mismatch">&#10007; SSD 480 ГБ</td>
+              </tr>
+              <tr>
+                <td>Гарантия</td>
+                <td>3 года, выезд</td>
+                <td class="app-partial">&#9888; 1 год, стандартная</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROBLEM -->
+  <section class="problems-section">
+    <div class="problems-inner">
+      <div class="section-label reveal">Проблема</div>
+      <h2 class="section-title reveal reveal-delay-1">Закупки всё ещё делаются вручную</h2>
+      <p class="section-desc reveal reveal-delay-2">Нет ни одного зрелого инструмента автоматизации. Специалисты работают в Excel, отправляют письма по одному и сверяют заявки глазами.</p>
+
+      <div class="problems-grid">
+        <div class="problem-row reveal">
+          <div class="problem-num">01</div>
+          <div class="problem-text"><strong>Поиск поставщиков — лотерея.</strong> 20 запросов, 1-2 ответа. Один и тот же пул годами, цены завышены.</div>
+          <div class="problem-cost">5-10% конверсия</div>
+        </div>
+        <div class="problem-row reveal reveal-delay-1">
+          <div class="problem-num">02</div>
+          <div class="problem-text"><strong>Проверка заявок — ручной труд.</strong> 10 заявок по 100 позиций. Перемешанный порядок, PDF на бланках, частичные лоты.</div>
+          <div class="problem-cost">1 000 позиций глазами</div>
+        </div>
+        <div class="problem-row reveal reveal-delay-2">
+          <div class="problem-num">03</div>
+          <div class="problem-text"><strong>К концу года — коллапс.</strong> Объём закупок растёт в 3-5 раз, а команда та же. Бутылочное горлышко и риск ошибок.</div>
+          <div class="problem-cost">x3-5 нагрузка</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SOLUTION / CONVEYOR -->
+  <section class="section" id="solution">
+    <div class="section-label reveal">Решение</div>
+    <h2 class="section-title reveal reveal-delay-1">Четыре модуля. Один конвейер.</h2>
+    <p class="section-desc reveal reveal-delay-2">Каждый модуль работает самостоятельно, но вместе они закрывают полный цикл — от загрузки ТЗ до проверенных результатов.</p>
+
+    <div class="conveyor-grid">
+      <div class="conveyor-step reveal">
+        <div class="conveyor-num">01</div>
+        <div class="conveyor-name">Поиск поставщиков</div>
+        <div class="conveyor-desc">AI находит поставщиков по всем лотам. Добавляйте своих, импортируйте из файла. Расширяйте пул без усилий.</div>
+        <div class="conveyor-status ready">&#10003; Работает</div>
+        <svg class="conveyor-arrow" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
+      <div class="conveyor-step reveal reveal-delay-1">
+        <div class="conveyor-num">02</div>
+        <div class="conveyor-name">Письма и КП</div>
+        <div class="conveyor-desc">AI генерирует запрос КП. Простой email или PDF на фирменном бланке. Массовая рассылка в один клик.</div>
+        <div class="conveyor-status ready">&#10003; Работает</div>
+        <svg class="conveyor-arrow" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
+      <div class="conveyor-step reveal reveal-delay-2">
+        <div class="conveyor-num">03</div>
+        <div class="conveyor-name">Сравнение ТЗ и КП</div>
+        <div class="conveyor-desc">Автоматическое сопоставление характеристик. Позиции матчатся по смыслу, даже если порядок перемешан.</div>
+        <div class="conveyor-status ready">&#10003; Работает</div>
+        <svg class="conveyor-arrow" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
+      <div class="conveyor-step reveal reveal-delay-3">
+        <div class="conveyor-num">04</div>
+        <div class="conveyor-name">Нацрежим</div>
+        <div class="conveyor-desc">Проверка по ПП-719, ПП-1875, баллам локализации и каталогу ГИСП. Расхождения подсвечиваются.</div>
+        <div class="conveyor-status ready">&#10003; Работает</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section" id="how">
+    <div class="section-label reveal">Как это работает</div>
+    <h2 class="section-title reveal reveal-delay-1">Четыре шага вместо недели работы</h2>
+
+    <div class="steps-grid">
+      <div class="step reveal">
+        <div class="step-visual">
+          <div class="step-visual-inner">
+            <div class="step-upload-zone">
+              <div class="icon">&#128196;</div>
+              <div>Загрузить ТЗ</div>
+              <div style="font-size: 10px; color: var(--text-3); margin-top: 4px;">pdf, xlsx, doc, docx</div>
+            </div>
+          </div>
+        </div>
+        <h3>Загрузите ТЗ</h3>
+        <p>AI распознает лоты, характеристики и количество. Поддерживаются все основные форматы.</p>
+      </div>
+
+      <div class="step reveal reveal-delay-1">
+        <div class="step-visual">
+          <div class="step-visual-inner">
+            <div class="step-supplier-row">
+              <div class="step-supplier-dot" style="background: var(--accent);"></div>
+              <span>ООО "СерверСнаб"</span>
+              <span style="margin-left: auto; color: var(--text-3);">AI</span>
+            </div>
+            <div class="step-supplier-row">
+              <div class="step-supplier-dot" style="background: var(--accent);"></div>
+              <span>АО "ИТ-Комплект"</span>
+              <span style="margin-left: auto; color: var(--text-3);">AI</span>
+            </div>
+            <div class="step-supplier-row">
+              <div class="step-supplier-dot" style="background: var(--teal);"></div>
+              <span>ГК "ТехноПром"</span>
+              <span style="margin-left: auto; color: var(--text-3);">Свой</span>
+            </div>
+            <div style="margin-top: 6px;">
+              <div class="step-send-btn" style="font-size: 9px; display: inline-block;">&#9993; Отправить запросы КП</div>
+            </div>
+          </div>
+        </div>
+        <h3>Найдите поставщиков и отправьте запросы</h3>
+        <p>AI ищет поставщиков по всем лотам. Добавьте своих. Сгенерируйте письмо и разошлите в один клик.</p>
+      </div>
+
+      <div class="step reveal reveal-delay-2">
+        <div class="step-visual">
+          <div class="step-visual-inner">
+            <div class="step-supplier-row" style="background: var(--teal-subtle);">
+              <span style="font-weight: 500;">&#128196; АО "ИТ-Комплект"</span>
+              <span style="margin-left: auto; color: var(--teal-dark); font-weight: 600;">2 450 000 &#8381;</span>
+            </div>
+            <div class="step-supplier-row" style="background: var(--teal-subtle);">
+              <span style="font-weight: 500;">&#128196; ООО "СерверСнаб"</span>
+              <span style="margin-left: auto; color: var(--teal-dark); font-weight: 600;">2 680 000 &#8381;</span>
+            </div>
+            <div class="step-supplier-row">
+              <span style="color: var(--text-3);">&#9993; ГК "ТехноПром"</span>
+              <span style="margin-left: auto; color: var(--text-3); font-size: 10px;">Ожидание</span>
+            </div>
+          </div>
+        </div>
+        <h3>Получите КП</h3>
+        <p>Коммерческие предложения поступают в систему. Цены, сроки, позиции — всё в одном месте.</p>
+      </div>
+
+      <div class="step reveal reveal-delay-3">
+        <div class="step-visual">
+          <div class="step-visual-inner" style="gap: 0;">
+            <div class="step-result-row">
+              <span>SSD 960 ГБ</span>
+              <span class="app-mismatch">&#10007; 480 ГБ в КП</span>
+            </div>
+            <div class="step-result-row">
+              <span>Гарантия 3 года</span>
+              <span class="app-match">&#10003; Совпадает</span>
+            </div>
+            <div class="step-result-row">
+              <span>RAM 64 ГБ</span>
+              <span class="app-match">&#10003; Совпадает</span>
+            </div>
+            <div class="step-result-row" style="background: var(--accent-subtle); border-radius: 0 0 4px 4px;">
+              <span style="font-weight: 500;">Нацрежим ПП-719</span>
+              <span class="app-match">&#10003; Пройден</span>
+            </div>
+          </div>
+        </div>
+        <h3>Сравните с ТЗ и проверьте нацрежим</h3>
+        <p>AI сверяет каждую позицию КП с требованиями ТЗ и проверяет соответствие ПП-719, ПП-1875, ГИСП.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- NUMBERS -->
+  <section class="numbers-section" id="numbers">
+    <div class="numbers-inner">
+      <div class="section-label reveal">Результаты</div>
+      <h2 class="section-title reveal reveal-delay-1">Цифры вместо обещаний</h2>
+
+      <div class="numbers-grid">
+        <div class="number-item reveal">
+          <div class="number-value">2 мин</div>
+          <div class="number-label">Проверка заявки из 10 страниц</div>
+          <div class="number-compare"><s>2 дня</s> вручную</div>
+        </div>
+        <div class="number-item reveal reveal-delay-1">
+          <div class="number-value">95%</div>
+          <div class="number-label">Точность сопоставления характеристик (F1)</div>
+          <div class="number-compare">Подтверждено на реальных данных</div>
+        </div>
+        <div class="number-item reveal reveal-delay-2">
+          <div class="number-value">15+</div>
+          <div class="number-label">Поставщиков за один поиск</div>
+          <div class="number-compare"><s>3-5</s> из старого пула</div>
+        </div>
+        <div class="number-item reveal reveal-delay-3">
+          <div class="number-value">0 интеграций</div>
+          <div class="number-label">Работает из коробки, без подключения к ERP</div>
+          <div class="number-compare">Загрузили файл — готово</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECURITY -->
+  <section class="section" id="security">
+    <div class="section-label reveal">Безопасность</div>
+    <h2 class="section-title reveal reveal-delay-1">Ваши документы остаются у вас</h2>
+    <p class="section-desc reveal reveal-delay-2">Исходные файлы не покидают сервер. В AI-модель передаются только извлечённые характеристики товаров — без названий компаний и контактов.</p>
+
+    <div class="security-layout">
+      <div class="security-points">
+        <div class="security-point reveal">
+          <div class="security-icon">01</div>
+          <div>
+            <h4>Локальный парсинг</h4>
+            <p>Распознавание документов (PDF, DOCX, сканы) происходит на нашем сервере. Файлы не передаются третьим сторонам.</p>
+          </div>
+        </div>
+        <div class="security-point reveal reveal-delay-1">
+          <div class="security-icon">02</div>
+          <div>
+            <h4>Только характеристики товаров</h4>
+            <p>В AI-модель уходят извлечённые параметры и ID запроса. Провайдер не может идентифицировать автора.</p>
+          </div>
+        </div>
+        <div class="security-point reveal reveal-delay-2">
+          <div class="security-icon">03</div>
+          <div>
+            <h4>Курс на российскую инфраструктуру</h4>
+            <p>Переход на собственные модели в российском облаке. Данные не покидают территорию РФ.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="security-diagram reveal reveal-delay-1">
+        <div style="font-family: var(--font-display); font-size: 13px; font-weight: 600; margin-bottom: 20px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em;">Как обрабатываются данные</div>
+        <div class="sec-flow">
+          <div class="sec-flow-step">
+            <div class="sec-flow-badge local">Локально</div>
+            <span>Загрузка и распознавание документа</span>
+          </div>
+          <div class="sec-flow-arrow">&#8595;</div>
+          <div class="sec-flow-step">
+            <div class="sec-flow-badge local">Локально</div>
+            <span>Извлечение характеристик товаров</span>
+          </div>
+          <div class="sec-flow-arrow">&#8595;</div>
+          <div class="sec-flow-step">
+            <div class="sec-flow-badge cloud">AI-модель</div>
+            <span>Только параметры + ID запроса</span>
+          </div>
+          <div class="sec-flow-arrow">&#8595;</div>
+          <div class="sec-flow-step">
+            <div class="sec-flow-badge local">Локально</div>
+            <span>Результат сравнения и проверки</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section" id="pilot">
+    <div class="cta-inner">
+      <h2 class="section-title">Покажем результат на вашей закупке</h2>
+      <p class="cta-sub">Запустите пилот на реальных данных — с сопровождением нашей команды. Бесплатно, без обязательств, без интеграций.</p>
+      <a href="mailto:info@zakupai.tech?subject=%D0%97%D0%B0%D1%8F%D0%B2%D0%BA%D0%B0%20%D0%BD%D0%B0%20%D0%BF%D0%B8%D0%BB%D0%BE%D1%82" class="cta-btn">Оставить заявку на пилот</a>
+      <div class="cta-note">Количество пилотов ограничено</div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-logo">zakup<span>AI</span></div>
+      <div class="footer-text">info@zakupai.tech</div>
+      <div class="footer-text">&copy; 2026 ТенАй. Все права защищены.</div>
+    </div>
+  </footer>
+
+  <script>
+    // Nav scroll effect
+    const nav = document.getElementById('nav');
+    window.addEventListener('scroll', () => {
+      nav.classList.toggle('scrolled', window.scrollY > 20);
+    }, { passive: true });
+
+    // Mobile menu
+    document.getElementById('burger').addEventListener('click', () => {
+      document.getElementById('navLinks').classList.toggle('open');
+    });
+
+    // Scroll reveal
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+    // Smooth scroll for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const target = document.querySelector(a.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          document.getElementById('navLinks').classList.remove('open');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

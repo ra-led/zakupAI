@@ -17,6 +17,7 @@ jobs:
           script: |
             cd /opt/zakupai
             git pull origin main
+            cp landing/index.html /var/www/landing/index.html
             docker compose -f docker-compose.prod.yml build
             docker compose -f docker-compose.prod.yml up -d
             docker image prune -f

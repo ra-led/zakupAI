@@ -7,7 +7,7 @@ jobs:
   debug:
     runs-on: ubuntu-latest
     steps:
-      - name: Debug API
+      - name: Debug
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -15,32 +15,11 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /opt/zakupai
-
-            echo "=== CHECK existing user ==="
-            docker compose -f docker-compose.prod.yml exec -T db psql -U zakupai -d zakupai -c "SELECT id, email, full_name, is_admin FROM \"user\";" 2>&1
-
+            echo "=== OPENROUTER_API_KEY check ==="
+            grep OPENROUTER_API_KEY .env 2>/dev/null && echo "PRESENT" || echo "MISSING"
             echo ""
-            echo "=== NGINX ERROR LOG (last 10) ==="
-            docker compose -f docker-compose.prod.yml logs --tail=10 nginx 2>&1 | grep -i error
-
+            echo "=== CONTAINER STATUS ==="
+            docker compose -f docker-compose.prod.yml ps
             echo ""
-            echo "=== BACKEND LOG (last 20) ==="
+            echo "=== BACKEND LOGS (last 20) ==="
             docker compose -f docker-compose.prod.yml logs --tail=20 backend 2>&1
-
-            echo ""
-            echo "=== TEST: register qwadro@mail.ru ==="
-            curl -s -X POST http://localhost:8000/auth/register \
-              -H "Content-Type: application/json" \
-              -d '{"email":"qwadro@mail.ru","password":"test123456"}' 2>&1 || echo "CURL FAILED"
-
-            echo ""
-            echo "=== TEST: login qwadro@mail.ru ==="
-            curl -s -X POST http://localhost:8000/auth/login \
-              -H "Content-Type: application/json" \
-              -d '{"email":"qwadro@mail.ru","password":"test123456"}' 2>&1 || echo "CURL FAILED"
-
-            echo ""
-            echo "=== TEST: via nginx proxy ==="
-            curl -sk -X POST https://app.zakupai.tech/api/auth/register \
-              -H "Content-Type: application/json" \
-              -d '{"email":"testuser999@example.com","password":"test123456"}' 2>&1 || echo "CURL FAILED"

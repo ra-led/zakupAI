@@ -101,18 +101,8 @@ services:
       - "443:443"
     volumes:
       - ./nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
-      - certbot_data:/var/www/certbot:ro
-      - certbot_certs:/etc/letsencrypt:ro
-
-  certbot:
-    image: certbot/certbot
-    volumes:
-      - certbot_data:/var/www/certbot
-      - certbot_certs:/etc/letsencrypt
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+      - /etc/letsencrypt:/etc/letsencrypt:ro
 
 volumes:
   db_data:
   doc_to_md_models:
-  certbot_data:
-  certbot_certs:

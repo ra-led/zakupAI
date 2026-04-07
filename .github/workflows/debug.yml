@@ -1,0 +1,25 @@
+name: Debug logs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check backend logs
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/zakupai
+            echo "=== BACKEND LOGS (last 50) ==="
+            docker compose -f docker-compose.prod.yml logs --tail=50 backend 2>&1
+            echo ""
+            echo "=== CONTAINER STATUS ==="
+            docker compose -f docker-compose.prod.yml ps
+            echo ""
+            echo "=== .env JWT check ==="
+            grep JWT_SECRET_KEY .env 2>/dev/null && echo "JWT_SECRET_KEY present" || echo "JWT_SECRET_KEY MISSING"

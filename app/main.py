@@ -17,6 +17,7 @@ from . import auth
 from .database import create_db_and_tables, get_session
 from .routers import auth as auth_router
 from .routers import admin as admin_router
+from .routers import regime as regime_router
 from .llm_openai import build_search_queries
 from .llm_stub import generate_email_body
 from .models import (
@@ -86,6 +87,7 @@ app.add_middleware(
 
 app.include_router(auth_router.router)
 app.include_router(admin_router.router)
+app.include_router(regime_router.router)
 
 
 @app.on_event("startup")

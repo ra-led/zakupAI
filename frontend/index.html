@@ -190,23 +190,21 @@
 
       <!-- ==================== TAB 4: NAT REGIME ==================== -->
       <div class="tab-content" id="tab-regime">
-        <div class="card">
+        <div class="card section-gap">
           <div class="card-header">
             <h3>Проверка национального режима</h3>
+            <div class="flex-gap">
+              <button class="btn btn-primary btn-sm" id="btn-regime-check">Проверить все товары</button>
+              <button class="btn btn-secondary btn-sm" id="btn-regime-refresh">Обновить</button>
+            </div>
           </div>
           <div class="card-body">
             <div class="info-block" style="margin-bottom: 16px;">
-              &#8505; Раздел находится в разработке
+              &#8505; Проверка по ПП №1875, реестру российской продукции, баллам локализации и каталогу ГИСП
             </div>
-            <div style="color: var(--text-secondary); font-size: 14px; line-height: 1.8;">
-              Планируемые возможности:
-              <ul style="margin-top: 8px; padding-left: 20px;">
-                <li>Проверка по ПП №1875</li>
-                <li>Поиск в реестре российской продукции (ПП №719)</li>
-                <li>Проверка баллов локализации</li>
-                <li>Поиск в каталоге ГИСП</li>
-                <li>Автоматическое формирование обоснования</li>
-              </ul>
+
+            <div id="regime-results">
+              <div class="empty-state">Загрузите лоты и выполните поиск поставщиков для проверки национального режима</div>
             </div>
           </div>
         </div>

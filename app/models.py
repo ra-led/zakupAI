@@ -133,3 +133,79 @@ class LotParameter(SQLModel, table=True):
     name: str
     value: str
     units: str
+
+
+# --- National regime checker models ---
+
+
+class RegimeCheck(SQLModel, table=True):
+    __tablename__ = "regimecheck"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    purchase_id: int = Field(foreign_key="purchase.id")
+    user_id: int = Field(foreign_key="user.id")
+    file_path: Optional[str] = None
+    filename: Optional[str] = None
+    status: str = Field(default="pending")
+    ok_count: Optional[int] = None
+    warning_count: Optional[int] = None
+    error_count: Optional[int] = None
+    not_found_count: Optional[int] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class RegimeCheckItem(SQLModel, table=True):
+    __tablename__ = "regimecheckitem"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    check_id: int = Field(foreign_key="regimecheck.id")
+    product_name: Optional[str] = None
+    registry_number: Optional[str] = None
+    okpd2_code: Optional[str] = None
+    supplier_characteristics: Optional[str] = None  # JSON string
+
+    # Registry 719 PP check
+    registry_status: Optional[str] = None
+    registry_actual: Optional[bool] = None
+    registry_cert_end_date: Optional[str] = None
+    registry_raw_url: Optional[str] = None
+
+    # Localization score check (PP 1875)
+    localization_status: Optional[str] = None
+    localization_actual_score: Optional[float] = None
+    localization_required_score: Optional[float] = None
+
+    # GISP characteristics check
+    gisp_status: Optional[str] = None
+    gisp_characteristics: Optional[str] = None  # JSON string
+    gisp_comparison: Optional[str] = None  # JSON string
+    gisp_url: Optional[str] = None
+
+    # Overall status
+    overall_status: str = Field(default="pending")
+
+
+class RegistryProduct(SQLModel, table=True):
+    """Product from PP 719 registry (opendata CSV)."""
+    __tablename__ = "registryproduct"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    registry_number: Optional[str] = Field(default=None, index=True)
+    org_name: Optional[str] = None
+    inn: Optional[str] = Field(default=None, index=True)
+    ogrn: Optional[str] = None
+    product_name: Optional[str] = None
+    okpd2: Optional[str] = Field(default=None, index=True)
+    tnved: Optional[str] = None
+    doc_date: Optional[str] = None
+    doc_valid_till: Optional[str] = None
+    end_date: Optional[str] = None
+    score: Optional[float] = None
+    percentage: Optional[float] = None
+    score_desc: Optional[str] = None
+    reg_number_pp: Optional[str] = None
+    doc_name: Optional[str] = None
+    doc_num: Optional[str] = None
+    mpt_dep: Optional[str] = None
+    res_doc_num: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)

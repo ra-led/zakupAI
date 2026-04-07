@@ -234,6 +234,7 @@
     loadLots();
     loadSuppliers();
     loadBids();
+    loadRegimeCheck();
     // Reset comparison
     selectedBidId = null;
     $('comparison-results').innerHTML = '';
@@ -981,12 +982,136 @@
     $('comparison-results').innerHTML = html;
   }
 
+  // ── National Regime ─────────────────────────────────────────────────
+
+  var regimePollingTimer = null;
+
+  function initRegime() {
+    var btnCheck = $('btn-regime-check');
+    var btnRefresh = $('btn-regime-refresh');
+    if (btnCheck) btnCheck.addEventListener('click', startRegimeCheck);
+    if (btnRefresh) btnRefresh.addEventListener('click', loadRegimeCheck);
+  }
+
+  function startRegimeCheck() {
+    if (!selectedPurchaseId) return;
+    $('regime-results').innerHTML = '<div class="search-status"><div class="spinner"></div><span>Запуск проверки национального режима...</span></div>';
+    API.apiFetch('/regime/purchases/' + selectedPurchaseId + '/check', { method: 'POST' })
+      .then(function (data) {
+        if (data && (data.status === 'pending' || data.status === 'processing')) {
+          pollRegimeCheck();
+        } else {
+          renderRegimeResults(data);
+        }
+      })
+      .catch(function (err) { showError(err.message); });
+  }
+
+  function loadRegimeCheck() {
+    if (!selectedPurchaseId) return;
+    API.apiFetch('/regime/purchases/' + selectedPurchaseId + '/check')
+      .then(function (data) {
+        if (!data || !data.id) {
+          $('regime-results').innerHTML = '<div class="empty-state">Загрузите лоты и выполните поиск поставщиков для проверки национального режима</div>';
+          return;
+        }
+        if (data.status === 'pending' || data.status === 'processing') {
+          $('regime-results').innerHTML = '<div class="search-status"><div class="spinner"></div><span>Проверка выполняется...</span></div>';
+          pollRegimeCheck();
+        } else {
+          renderRegimeResults(data);
+        }
+      })
+      .catch(function () {
+        $('regime-results').innerHTML = '<div class="empty-state">Загрузите лоты и выполните поиск поставщиков для проверки национального режима</div>';
+      });
+  }
+
+  function pollRegimeCheck() {
+    if (regimePollingTimer) clearTimeout(regimePollingTimer);
+    regimePollingTimer = setTimeout(function () {
+      if (!selectedPurchaseId) return;
+      API.apiFetch('/regime/purchases/' + selectedPurchaseId + '/check')
+        .then(function (data) {
+          if (data && (data.status === 'pending' || data.status === 'processing')) {
+            pollRegimeCheck();
+          } else {
+            renderRegimeResults(data);
+          }
+        })
+        .catch(function () { });
+    }, 3000);
+  }
+
+  function renderRegimeResults(data) {
+    if (!data || !data.items || data.items.length === 0) {
+      $('regime-results').innerHTML = '<div class="empty-state">Нет результатов проверки</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < data.items.length; i++) {
+      var item = data.items[i];
+      var statusClass = 'status-draft';
+      var statusLabel = 'Проверяется';
+      if (item.overall_status === 'ok') { statusClass = 'status-active'; statusLabel = 'Соответствует'; }
+      else if (item.overall_status === 'warning') { statusClass = 'status-warning'; statusLabel = 'Внимание'; }
+      else if (item.overall_status === 'error') { statusClass = 'status-search'; statusLabel = 'Не соответствует'; }
+      else if (item.overall_status === 'not_found') { statusClass = 'status-draft'; statusLabel = 'Не найден'; }
+
+      html += '<div class="regime-card"><div class="regime-card-header"><div>';
+      html += '<div class="regime-product">' + escapeHtml(item.product_name || 'Товар') + '</div>';
+      if (item.registry_number) html += '<div style="font-size:12px;color:var(--text-secondary);">Реестровый номер: ' + escapeHtml(item.registry_number) + '</div>';
+      if (item.okpd2_code) html += '<div style="font-size:12px;color:var(--text-secondary);">ОКПД2: ' + escapeHtml(item.okpd2_code) + '</div>';
+      html += '</div>';
+      html += '<span class="status ' + statusClass + '"><span class="status-dot"></span> ' + statusLabel + '</span>';
+      html += '</div><div class="regime-checks">';
+
+      // Registry PP 719
+      html += renderRegimeCheckCell('Реестр ПП №719', item.registry_status, item.registry_actual, item.registry_cert_end_date, item.registry_raw_url);
+
+      // Localization PP 1875
+      var locDetail = '';
+      if (item.localization_actual_score != null && item.localization_required_score != null) {
+        locDetail = item.localization_actual_score + ' из ' + item.localization_required_score + ' (мин.)';
+      }
+      html += renderRegimeCheckCellSimple('Баллы локализации', item.localization_status, locDetail);
+
+      // GISP
+      html += renderRegimeCheckCellSimple('Каталог ГИСП', item.gisp_status, item.gisp_url ? '<a href="' + escapeHtml(item.gisp_url) + '" target="_blank">Открыть</a>' : '');
+
+      html += '</div></div>';
+    }
+    $('regime-results').innerHTML = html;
+  }
+
+  function renderRegimeCheckCell(label, status, actual, certEnd, url) {
+    var cls = 'regime-check regime-unknown';
+    var icon = '—';
+    var detail = '';
+    if (status === 'ok') { cls = 'regime-check regime-pass'; icon = '✓'; detail = actual ? 'Найден в реестре' : 'Найден, не актуален'; }
+    else if (status === 'not_actual') { cls = 'regime-check regime-fail'; icon = '✗'; detail = 'Запись не актуальна'; }
+    else if (status === 'not_found') { cls = 'regime-check regime-fail'; icon = '✗'; detail = 'Не найден в реестре'; }
+    if (certEnd) detail += ', до ' + certEnd;
+    return '<div class="' + cls + '"><div class="regime-check-label">' + icon + ' ' + escapeHtml(label) + '</div><div class="regime-check-value">' + detail + '</div></div>';
+  }
+
+  function renderRegimeCheckCellSimple(label, status, detail) {
+    var cls = 'regime-check regime-unknown';
+    var icon = '—';
+    if (status === 'ok') { cls = 'regime-check regime-pass'; icon = '✓'; }
+    else if (status === 'insufficient' || status === 'mismatch' || status === 'error') { cls = 'regime-check regime-fail'; icon = '✗'; }
+    else if (status === 'warning' || status === 'wording') { cls = 'regime-check regime-unknown'; icon = '⚠'; }
+    else if (status === 'not_found' || status === 'okpd_not_found' || status === 'score_missing') { cls = 'regime-check regime-unknown'; icon = '—'; }
+    return '<div class="' + cls + '"><div class="regime-check-label">' + icon + ' ' + escapeHtml(label) + '</div><div class="regime-check-value">' + (detail || '') + '</div></div>';
+  }
+
   // ── Polling cleanup ────────────────────────────────────────────────
 
   function clearPolling() {
     if (lotsPollingTimer) { clearTimeout(lotsPollingTimer); lotsPollingTimer = null; }
     if (searchPollingTimer) { clearTimeout(searchPollingTimer); searchPollingTimer = null; }
     if (comparisonPollingTimer) { clearTimeout(comparisonPollingTimer); comparisonPollingTimer = null; }
+    if (regimePollingTimer) { clearTimeout(regimePollingTimer); regimePollingTimer = null; }
   }
 
   // ── Init ───────────────────────────────────────────────────────────
@@ -1004,6 +1129,7 @@
     initEmailDraft();
     initAddBid();
     initComparison();
+    initRegime();
     loadPurchases();
   });
 

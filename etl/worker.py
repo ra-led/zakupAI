@@ -31,15 +31,15 @@ LOT_MATCH_MIN_CONFIDENCE = float(os.getenv("LOT_MATCH_MIN_CONFIDENCE", "0.45"))
 LOT_PARAM_MATCH_MIN_CONFIDENCE = float(os.getenv("LOT_PARAM_MATCH_MIN_CONFIDENCE", "0.45"))
 
 
-def _chat_completion_no_reasoning(client: OpenAI, **kwargs):
+def _chat_completion_with_reasoning(client: OpenAI, **kwargs):
     payload = dict(kwargs)
     extra_body = payload.get("extra_body")
     if isinstance(extra_body, dict):
         merged = dict(extra_body)
-        merged["reasoning"] = {"enabled": False}
+        merged["reasoning"] = {"enabled": True}
         payload["extra_body"] = merged
     else:
-        payload["extra_body"] = {"reasoning": {"enabled": False}}
+        payload["extra_body"] = {"reasoning": {"enabled": True}}
     return client.chat.completions.create(**payload)
 
 
@@ -279,7 +279,7 @@ def _classify_match(
     ]
 
     try:
-        response = _chat_completion_no_reasoning(
+        response = _chat_completion_with_reasoning(
             client,
             model=OPENROUTER_MATCH_MODEL,
             messages=messages,
@@ -287,7 +287,7 @@ def _classify_match(
             temperature=0,
         )
     except Exception:
-        response = _chat_completion_no_reasoning(
+        response = _chat_completion_with_reasoning(
             client,
             model=OPENROUTER_MATCH_MODEL,
             messages=messages,
@@ -341,7 +341,7 @@ def _classify_param_match(
     ]
 
     try:
-        response = _chat_completion_no_reasoning(
+        response = _chat_completion_with_reasoning(
             client,
             model=OPENROUTER_MATCH_MODEL,
             messages=messages,
@@ -349,7 +349,7 @@ def _classify_param_match(
             temperature=0,
         )
     except Exception:
-        response = _chat_completion_no_reasoning(
+        response = _chat_completion_with_reasoning(
             client,
             model=OPENROUTER_MATCH_MODEL,
             messages=messages,

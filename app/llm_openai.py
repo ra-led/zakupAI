@@ -75,8 +75,21 @@ PERPLEXITY_SUPPLIERS_SCHEMA: Dict[str, Any] = {
 
 
 
+def _with_reasoning_disabled(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(kwargs)
+    extra_body = payload.get("extra_body")
+    if isinstance(extra_body, dict):
+        merged = dict(extra_body)
+        merged["reasoning"] = {"enabled": False}
+        payload["extra_body"] = merged
+    else:
+        payload["extra_body"] = {"reasoning": {"enabled": False}}
+    return payload
+
+
 def _raw_create_chat_completion(client: OpenAI, **kwargs):
-    raw_response = client.chat.completions.with_raw_response.create(**kwargs)
+    request_payload = _with_reasoning_disabled(kwargs)
+    raw_response = client.chat.completions.with_raw_response.create(**request_payload)
     status_code = getattr(raw_response, "status_code", None)
     raw_text = None
     text_attr = getattr(raw_response, "text", None)

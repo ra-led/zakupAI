@@ -219,6 +219,7 @@ def summarize_tz_for_single_supplier(tz_text: str) -> Dict[str, Any]:
             {"role": "user", "content": prompt},
         ],
         max_completion_tokens=2500,
+        extra_body={"reasoning": {"enabled": False}},
     )
 
     raw_text = response.choices[0].message.content.strip()
@@ -296,7 +297,8 @@ def transform_answer_to_json(task: str, received_answer: str) -> Dict[str, Any]:
                 {"role": "system", "content": "You are a JSON transformation specialist."},
                 {"role": "user", "content": prompt}
             ],
-            max_completion_tokens=2000
+            max_completion_tokens=2000,
+            extra_body={"reasoning": {"enabled": False}},
         )
         
         response_text = response.choices[0].message.content.strip()
@@ -781,6 +783,7 @@ def doc_validation(technical_spec: str, doc) -> Tuple[bool, str]:
                 {"role": "user", "content": task},
             ],
             max_completion_tokens=300,
+            extra_body={"reasoning": {"enabled": False}},
         )
 
         raw = response.choices[0].message.content.strip()
@@ -849,6 +852,7 @@ def company_validation(
                 {"role": "user", "content": task},
             ],
             max_completion_tokens=400,
+            extra_body={"reasoning": {"enabled": False}},
         )
 
         raw = response.choices[0].message.content.strip()

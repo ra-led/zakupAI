@@ -31,6 +31,18 @@ LOT_MATCH_MIN_CONFIDENCE = float(os.getenv("LOT_MATCH_MIN_CONFIDENCE", "0.45"))
 LOT_PARAM_MATCH_MIN_CONFIDENCE = float(os.getenv("LOT_PARAM_MATCH_MIN_CONFIDENCE", "0.45"))
 
 
+def _chat_completion_no_reasoning(client: OpenAI, **kwargs):
+    payload = dict(kwargs)
+    extra_body = payload.get("extra_body")
+    if isinstance(extra_body, dict):
+        merged = dict(extra_body)
+        merged["reasoning"] = {"enabled": False}
+        payload["extra_body"] = merged
+    else:
+        payload["extra_body"] = {"reasoning": {"enabled": False}}
+    return client.chat.completions.create(**payload)
+
+
 def _upsert_suppliers(session: Session, task: LLMTask, merged_contacts: List[Dict]) -> List[Dict]:
     created: List[Dict] = []
 
@@ -267,14 +279,16 @@ def _classify_match(
     ]
 
     try:
-        response = client.chat.completions.create(
+        response = _chat_completion_no_reasoning(
+            client,
             model=OPENROUTER_MATCH_MODEL,
             messages=messages,
             response_format={"type": "json_object"},
             temperature=0,
         )
     except Exception:
-        response = client.chat.completions.create(
+        response = _chat_completion_no_reasoning(
+            client,
             model=OPENROUTER_MATCH_MODEL,
             messages=messages,
             temperature=0,
@@ -327,14 +341,16 @@ def _classify_param_match(
     ]
 
     try:
-        response = client.chat.completions.create(
+        response = _chat_completion_no_reasoning(
+            client,
             model=OPENROUTER_MATCH_MODEL,
             messages=messages,
             response_format={"type": "json_object"},
             temperature=0,
         )
     except Exception:
-        response = client.chat.completions.create(
+        response = _chat_completion_no_reasoning(
+            client,
             model=OPENROUTER_MATCH_MODEL,
             messages=messages,
             temperature=0,

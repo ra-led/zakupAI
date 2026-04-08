@@ -22,6 +22,8 @@ jobs:
             cd /opt/zakupai
             git pull origin main
             cp landing/index.html /var/www/landing/index.html
+            cp landing/robots.txt /var/www/landing/robots.txt
+            cp landing/sitemap.xml /var/www/landing/sitemap.xml
             grep -q '^JWT_SECRET_KEY=' .env 2>/dev/null || echo "JWT_SECRET_KEY=${JWT_SECRET_KEY}" >> .env
             sed -i "s|^OPENROUTER_API_KEY=.*|OPENROUTER_API_KEY=${OPENROUTER_API_KEY}|" .env
             docker compose -f docker-compose.prod.yml build

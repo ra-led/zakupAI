@@ -1449,6 +1449,34 @@
         }
       });
     });
+
+    // --- Yandex.Metrika goals ---
+
+    // 1. Click "Оставить заявку на пилот" (mailto CTA)
+    document.querySelector('.cta-btn').addEventListener('click', function () {
+      ym(108458197, 'reachGoal', 'pilot_request');
+    });
+
+    // 2. Click "Запустить пилот" (hero + navbar links to #pilot)
+    document.querySelectorAll('a[href="#pilot"]').forEach(function (a) {
+      if (!a.classList.contains('cta-btn')) {
+        a.addEventListener('click', function () {
+          ym(108458197, 'reachGoal', 'click_start_pilot');
+        });
+      }
+    });
+
+    // 3. Scroll to #pilot section
+    var pilotSection = document.getElementById('pilot');
+    if (pilotSection) {
+      var pilotObserver = new IntersectionObserver(function (entries) {
+        if (entries[0].isIntersecting) {
+          ym(108458197, 'reachGoal', 'scroll_to_pilot');
+          pilotObserver.disconnect();
+        }
+      }, { threshold: 0.3 });
+      pilotObserver.observe(pilotSection);
+    }
   </script>
 </body>
 </html>

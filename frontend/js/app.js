@@ -377,10 +377,13 @@
 
   function renderLots() {
     var container = $('lots-container');
+    var uploadCard = $('tz-upload-card');
     if (!currentLots.length) {
       container.innerHTML = '<div class="empty-state">Загрузите ТЗ или добавьте лоты вручную</div>';
+      if (uploadCard) uploadCard.style.display = '';
       return;
     }
+    if (uploadCard) uploadCard.style.display = 'none';
     var html = '';
     for (var i = 0; i < currentLots.length; i++) {
       var lot = currentLots[i];

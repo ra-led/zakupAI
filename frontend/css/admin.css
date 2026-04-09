@@ -1,6 +1,65 @@
 /* ============================================================
    ZakupAI — Admin Panel Styles
+   Variable bridge: map design-system tokens to main.css vars
    ============================================================ */
+
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --font-size-xs: 11px;
+  --font-size-sm: 13px;
+  --font-size-base: 15px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 22px;
+  --font-size-2xl: 28px;
+
+  --bg-page: var(--bg, #f0f2f5);
+  --bg-card: var(--card, #ffffff);
+  --bg-muted: #f1f5f9;
+  --bg-hover: #f8fafc;
+  --bg-active: #e2e8f0;
+
+  --text-primary: var(--text, #1a1f36);
+  --text-secondary: #6b7280;
+  --text-muted: #94a3b8;
+  --text-light: #cbd5e1;
+  --text-on-primary: #ffffff;
+
+  --border-color: var(--border, #e5e7eb);
+  --border-input: #d1d5db;
+
+  --border-radius: var(--radius, 10px);
+  --border-radius-sm: 6px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --border-radius-xl: 16px;
+  --border-radius-full: 9999px;
+
+  --color-indigo: var(--accent, #5b6abf);
+  --color-gradient: var(--gradient, linear-gradient(135deg, #5b6abf, #3bb8a8));
+  --color-gradient-hover: var(--gradient-hover, linear-gradient(135deg, #4a59ae, #2fa797));
+
+  --color-success: var(--success, #10b981);
+  --color-success-bg: var(--success-bg, #ecfdf5);
+  --color-warning: var(--warning, #f59e0b);
+  --color-warning-bg: var(--warning-bg, #fffbeb);
+  --color-danger: var(--danger, #ef4444);
+  --color-danger-bg: var(--danger-bg, #fef2f2);
+  --color-danger-border: #fca5a5;
+  --color-info: #3b82f6;
+  --color-info-bg: #eff6ff;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --transition: 0.2s ease;
+  --transition-fast: 0.15s ease;
+}
 
 /* ---- Dashboard Stats Grid ---- */
 

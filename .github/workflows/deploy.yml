@@ -26,6 +26,8 @@ jobs:
             cp landing/sitemap.xml /var/www/landing/sitemap.xml
             grep -q '^JWT_SECRET_KEY=' .env 2>/dev/null || echo "JWT_SECRET_KEY=${JWT_SECRET_KEY}" >> .env
             sed -i "s|^OPENROUTER_API_KEY=.*|OPENROUTER_API_KEY=${OPENROUTER_API_KEY}|" .env
+            sed -i "s|^ENABLE_EMBEDDED_QUEUE=.*|ENABLE_EMBEDDED_QUEUE=true|" .env
+            grep -q '^ENABLE_EMBEDDED_QUEUE=' .env 2>/dev/null || echo "ENABLE_EMBEDDED_QUEUE=true" >> .env
             docker compose -f docker-compose.prod.yml build
             docker compose -f docker-compose.prod.yml up -d
             docker compose -f docker-compose.prod.yml restart nginx

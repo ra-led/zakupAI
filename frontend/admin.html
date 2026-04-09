@@ -138,6 +138,7 @@
                   <th>Закупок</th>
                   <th>Дата регистрации</th>
                   <th>Статус</th>
+                  <th>Роль</th>
                 </tr>
               </thead>
               <tbody id="users-tbody"></tbody>
@@ -268,7 +269,14 @@
             if (!Array.isArray(users)) {
               users = users.items || users.data || [];
             }
+            var currentUser = Auth.getUser();
             tbody.innerHTML = users.map(function (u) {
+              var isSelf = currentUser && currentUser.id === u.id;
+              var adminBtn = isSelf
+                ? '<span class="admin-badge admin-badge-active">Админ (вы)</span>'
+                : (u.is_admin
+                  ? '<button class="btn btn-sm btn-outline btn-toggle-admin" data-uid="' + u.id + '" data-admin="true" style="font-size:12px;">Убрать админа</button>'
+                  : '<button class="btn btn-sm btn-outline btn-toggle-admin" data-uid="' + u.id + '" data-admin="false" style="font-size:12px;">Сделать админом</button>');
               return '<tr>'
                 + '<td>' + escapeHtml(u.email) + '</td>'
                 + '<td>' + escapeHtml(u.full_name || '—') + '</td>'
@@ -276,8 +284,29 @@
                 + '<td>' + (u.purchases_count != null ? u.purchases_count : '—') + '</td>'
                 + '<td>' + formatDate(u.created_at) + '</td>'
                 + '<td>' + statusBadge(u.is_active !== false) + '</td>'
+                + '<td>' + (u.is_admin ? '<span class="admin-badge admin-badge-completed">Админ</span>' : '<span class="admin-badge admin-badge-draft">Пользователь</span>') + ' ' + adminBtn + '</td>'
                 + '</tr>';
             }).join('');
+
+            // Bind toggle admin buttons
+            tbody.querySelectorAll('.btn-toggle-admin').forEach(function (btn) {
+              btn.addEventListener('click', async function () {
+                var uid = this.getAttribute('data-uid');
+                var isAdmin = this.getAttribute('data-admin') === 'true';
+                var newState = !isAdmin;
+                var action = newState ? 'назначить админом' : 'снять права админа';
+                if (!confirm('Вы уверены, что хотите ' + action + '?')) return;
+                try {
+                  await API.apiFetch('/admin/users/' + uid + '/admin', {
+                    method: 'PATCH',
+                    body: { is_admin: newState },
+                  });
+                  loadUsers(document.getElementById('user-search').value);
+                } catch (err) {
+                  alert('Ошибка: ' + (err.message || err));
+                }
+              });
+            });
 
             // Populate user filter in purchases section
             var filterUser = document.getElementById('filter-user');

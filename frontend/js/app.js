@@ -10,6 +10,8 @@
   var selectedBidId = null;
   var lotsPollingTimer = null;
   var searchPollingTimer = null;
+  var searchStartTime = null;
+  var searchTimerInterval = null;
   var comparisonPollingTimer = null;
 
   // ── DOM cache ──────────────────────────────────────────────────────
@@ -305,6 +307,12 @@
       var file = this.files[0];
       if (!file || !currentPurchase) return;
 
+      var zone = $('tz-upload-zone');
+      zone.querySelector('.label').textContent = file.name;
+      zone.querySelector('.label').style.color = 'var(--text-primary)';
+      zone.querySelector('.label').style.fontWeight = '600';
+      zone.querySelector('.hint').style.display = 'none';
+
       try {
         showMessage('Конвертация документа...');
         var converted = await API.convertTechTaskFile(file);
@@ -498,33 +506,76 @@
     }
   }
 
+  function formatElapsed(ms) {
+    var s = Math.floor(ms / 1000);
+    var m = Math.floor(s / 60);
+    s = s % 60;
+    return (m > 0 ? m + ' мин ' : '') + s + ' сек';
+  }
+
+  function startSearchTimer() {
+    if (!searchStartTime) searchStartTime = Date.now();
+    clearInterval(searchTimerInterval);
+    searchTimerInterval = setInterval(function () {
+      var el = $('search-elapsed');
+      if (el) el.textContent = formatElapsed(Date.now() - searchStartTime);
+    }, 1000);
+  }
+
+  function stopSearchTimer() {
+    clearInterval(searchTimerInterval);
+    searchTimerInterval = null;
+  }
+
   function renderSearchStatus(state) {
     var statusEl = $('search-status');
     statusEl.classList.remove('hidden');
-    var statusMap = {
-      queued: 'В очереди...',
-      in_progress: 'Поиск идёт...',
-      completed: 'Поиск завершён',
-      failed: 'Ошибка поиска',
-    };
-    var text = statusMap[state.status] || state.status;
+    statusEl.style.background = '';
 
     if (state.status === 'queued' || state.status === 'in_progress') {
+      startSearchTimer();
+      var note = state.note || '';
+      var steps = [];
+      steps.push({ label: 'Генерация поисковых запросов', done: !!(state.queries && state.queries.length) });
+      steps.push({ label: 'Поиск через Яндекс и Perplexity', done: note.indexOf('Yandex поиск обработан') >= 0 || note.indexOf('Perplexity обработан') >= 0 });
+      steps.push({ label: 'Обход сайтов и сбор контактов', done: note.indexOf('Обход сайтов выполнен') >= 0 });
+
+      var stepsHtml = '<div style="margin-top:8px">';
+      for (var i = 0; i < steps.length; i++) {
+        var icon = steps[i].done ? '<span style="color:var(--success)">&#10003;</span>' : '<span class="spinner" style="width:12px;height:12px;border-width:1.5px;display:inline-block;vertical-align:middle"></span>';
+        var textStyle = steps[i].done ? 'color:var(--text-secondary)' : 'font-weight:500';
+        stepsHtml += '<div style="font-size:13px;margin-bottom:4px;' + textStyle + '">' + icon + ' ' + steps[i].label + '</div>';
+      }
+      stepsHtml += '</div>';
+
       statusEl.className = 'search-status';
-      statusEl.innerHTML = '<div class="spinner"></div><div><strong>' + text + '</strong></div>';
+      statusEl.style.flexDirection = 'column';
+      statusEl.style.alignItems = 'stretch';
+      statusEl.innerHTML =
+        '<div style="display:flex;align-items:center;gap:12px">' +
+        '<div class="spinner"></div>' +
+        '<div><strong>Поиск идёт...</strong></div>' +
+        '<div style="margin-left:auto;font-size:13px;color:var(--text-secondary)" id="search-elapsed">' + formatElapsed(Date.now() - (searchStartTime || Date.now())) + '</div>' +
+        '</div>' +
+        stepsHtml;
     } else if (state.status === 'completed') {
+      stopSearchTimer();
+      var elapsed = searchStartTime ? formatElapsed(Date.now() - searchStartTime) : '';
+      searchStartTime = null;
       statusEl.className = 'search-status';
       statusEl.style.background = 'var(--success-bg)';
-      statusEl.innerHTML = '<div style="color:var(--success);font-size:16px">&#10003;</div><div><strong style="color:var(--success)">' + text + '</strong></div>';
+      statusEl.style.flexDirection = '';
+      statusEl.style.alignItems = '';
+      statusEl.innerHTML = '<div style="color:var(--success);font-size:16px">&#10003;</div><div><strong style="color:var(--success)">Поиск завершён</strong></div>' +
+        (elapsed ? '<div style="margin-left:auto;font-size:13px;color:var(--text-secondary)">' + elapsed + '</div>' : '');
     } else if (state.status === 'failed') {
+      stopSearchTimer();
+      searchStartTime = null;
       statusEl.className = 'search-status';
       statusEl.style.background = 'var(--danger-bg)';
-      statusEl.innerHTML = '<div style="color:var(--danger);font-size:16px">&#10007;</div><div><strong style="color:var(--danger)">' + text + '</strong></div>';
-    }
-
-    if (state.queries && state.queries.length) {
-      statusEl.innerHTML += '<div style="font-size:12px;color:var(--text-secondary);margin-left:auto">Запросы: ' +
-        state.queries.map(function (q) { return escapeHtml(q); }).join(', ') + '</div>';
+      statusEl.style.flexDirection = '';
+      statusEl.style.alignItems = '';
+      statusEl.innerHTML = '<div style="color:var(--danger);font-size:16px">&#10007;</div><div><strong style="color:var(--danger)">Ошибка поиска</strong></div>';
     }
   }
 
@@ -1268,6 +1319,7 @@
     if (searchPollingTimer) { clearTimeout(searchPollingTimer); searchPollingTimer = null; }
     if (comparisonPollingTimer) { clearTimeout(comparisonPollingTimer); comparisonPollingTimer = null; }
     if (regimePollingTimer) { clearTimeout(regimePollingTimer); regimePollingTimer = null; }
+    stopSearchTimer();
   }
 
   // ── Init ───────────────────────────────────────────────────────────

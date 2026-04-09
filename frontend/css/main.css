@@ -1058,6 +1058,9 @@ body {
   border-radius: 12px;
   width: 480px;
   max-width: 90vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 20px 60px rgba(0,0,0,0.2);
 }
 
@@ -1080,7 +1083,7 @@ body {
   padding: 4px;
 }
 
-.modal-body { padding: 20px; }
+.modal-body { padding: 20px; overflow-y: auto; }
 
 .modal-footer {
   padding: 16px 20px;

@@ -179,7 +179,26 @@ class TaskQueue:
                 raise RuntimeError("Bid lots extraction task disappeared")
             return refreshed
 
+    def _recover_stale_tasks(self) -> None:
+        """Reset tasks stuck in 'in_progress' (e.g. after container restart)."""
+        with Session(engine) as session:
+            stale = session.exec(
+                select(LLMTask).where(
+                    LLMTask.status == "in_progress",
+                    LLMTask.task_type.in_(
+                        ["supplier_search", "supplier_search_perplexity", "lots_extraction", "bid_lots_extraction"]
+                    ),
+                )
+            ).all()
+            for t in stale:
+                print(f"[task_queue] recovering stale task id={t.id} type={t.task_type}")
+                t.status = "queued"
+                session.add(t)
+            if stale:
+                session.commit()
+
     def _run(self) -> None:
+        self._recover_stale_tasks()
         while not self._stop_event.is_set():
             with Session(engine) as session:
                 task = session.exec(
@@ -231,7 +250,9 @@ class TaskQueue:
                 payload = self._load_payload(task.input_text)
                 terms_text = payload.get("terms_text", "")
                 hints = payload.get("hints") or []
+                print(f"[supplier_search] start task={task.id} purchase={task.purchase_id}")
                 plan = build_search_queries(terms_text, hints)
+                print(f"[supplier_search] completed task={task.id} queries={len(plan.queries)}")
                 task.output_text = json.dumps(
                     {
                         "queries": plan.queries,

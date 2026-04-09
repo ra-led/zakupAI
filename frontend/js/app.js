@@ -233,6 +233,7 @@
     // Load all data
     loadLots();
     loadSuppliers();
+    checkSearchStatus();
     loadBids();
     loadRegimeCheck();
     // Reset comparison
@@ -471,7 +472,6 @@
       renderSuppliers();
       renderOwnSuppliers();
       renderCorrespondenceSuppliers();
-      checkSearchStatus();
     } catch (e) {
       showError('Ошибка загрузки поставщиков: ' + e.message);
     }
@@ -479,6 +479,7 @@
 
   async function checkSearchStatus() {
     if (!currentPurchase) return;
+    clearTimeout(searchPollingTimer);
     try {
       var state = await API.apiFetch('/purchases/' + currentPurchase.id + '/suppliers/search');
       if (state && state.status) {
@@ -486,8 +487,9 @@
         if (state.status === 'queued' || state.status === 'in_progress') {
           searchPollingTimer = setTimeout(function () {
             checkSearchStatus();
-            loadSuppliers();
-          }, 3000);
+          }, 5000);
+        } else if (state.status === 'completed') {
+          loadSuppliers();
         }
       }
     } catch (_) {
@@ -502,7 +504,7 @@
     var statusMap = {
       queued: 'В очереди...',
       in_progress: 'Поиск идёт...',
-      done: 'Поиск завершён',
+      completed: 'Поиск завершён',
       failed: 'Ошибка поиска',
     };
     var text = statusMap[state.status] || state.status;
@@ -510,7 +512,7 @@
     if (state.status === 'queued' || state.status === 'in_progress') {
       statusEl.className = 'search-status';
       statusEl.innerHTML = '<div class="spinner"></div><div><strong>' + text + '</strong></div>';
-    } else if (state.status === 'done') {
+    } else if (state.status === 'completed') {
       statusEl.className = 'search-status';
       statusEl.style.background = 'var(--success-bg)';
       statusEl.innerHTML = '<div style="color:var(--success);font-size:16px">&#10003;</div><div><strong style="color:var(--success)">' + text + '</strong></div>';
@@ -619,10 +621,10 @@
         });
         renderSearchStatus(result);
         if (result.status === 'queued' || result.status === 'in_progress') {
+          clearTimeout(searchPollingTimer);
           searchPollingTimer = setTimeout(function () {
             checkSearchStatus();
-            loadSuppliers();
-          }, 3000);
+          }, 5000);
         }
       } catch (e) {
         showError('Ошибка запуска поиска: ' + e.message);

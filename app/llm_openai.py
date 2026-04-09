@@ -143,7 +143,7 @@ def build_search_queries(terms_text: str, hints: List[str] | None = None) -> Gen
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
     base_url = os.getenv("OPENAI_BASE_URL")
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=120.0)
     model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
     messages = _build_search_queries_prompt(terms_text or "", hints or [])
@@ -195,7 +195,7 @@ def extract_lots(terms_text: str) -> Dict[str, Any]:
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
     base_url = os.getenv("OPENAI_BASE_URL")
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=120.0)
     model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
     messages = _build_lots_prompt(terms_text)
@@ -234,7 +234,7 @@ def extract_bid_lots(terms_text: str) -> Dict[str, Any]:
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
     base_url = os.getenv("OPENAI_BASE_URL")
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=120.0)
     model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
     messages = _build_bid_lots_prompt(terms_text)
@@ -268,7 +268,7 @@ def extract_structured_contacts_from_perplexity(raw_answer: str, terms_text: str
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
     base_url = os.getenv("OPENAI_BASE_URL")
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=120.0)
     model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
     messages = [

@@ -15,5 +15,8 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /opt/zakupai
-            docker compose -f docker-compose.prod.yml exec -T db psql -U zakupai -d zakupai -c "UPDATE \"user\" SET is_admin=true WHERE email='qwadro@mail.ru';"
-            docker compose -f docker-compose.prod.yml exec -T db psql -U zakupai -d zakupai -c "SELECT id, email, is_admin FROM \"user\" WHERE email='qwadro@mail.ru';"
+            echo "=== CONTAINER STATUS ==="
+            docker compose -f docker-compose.prod.yml ps
+            echo ""
+            echo "=== BACKEND LOGS ==="
+            docker compose -f docker-compose.prod.yml logs backend --tail=50

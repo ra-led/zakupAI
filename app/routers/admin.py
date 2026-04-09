@@ -7,8 +7,8 @@ from sqlmodel import select, func, col
 
 from ..auth import get_admin_user
 from ..database import get_session
-from ..models import Lot, Purchase, User
-from ..schemas import AdminDashboard, AdminPurchaseRead, AdminUserRead
+from ..models import Lead, Lot, Purchase, User
+from ..schemas import AdminDashboard, AdminPurchaseRead, AdminUserRead, LeadRead
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -92,6 +92,19 @@ def toggle_admin(
     session.add(user)
     session.commit()
     return {"ok": True, "is_admin": user.is_admin}
+
+
+@router.get("/leads", response_model=List[LeadRead])
+def list_leads(
+    status: Optional[str] = Query(default=None),
+    _admin: User = Depends(get_admin_user),
+    session=Depends(get_session),
+) -> List[LeadRead]:
+    stmt = select(Lead)
+    if status:
+        stmt = stmt.where(Lead.status == status)
+    stmt = stmt.order_by(col(Lead.created_at).desc())
+    return session.exec(stmt).all()
 
 
 @router.get("/purchases", response_model=List[AdminPurchaseRead])

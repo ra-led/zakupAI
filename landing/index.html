@@ -876,6 +876,8 @@
       cursor: pointer;
       text-decoration: none;
       transition: transform 0.2s, box-shadow 0.2s;
+      width: 100%;
+      justify-content: center;
     }
 
     .cta-btn:hover {
@@ -883,10 +885,79 @@
       box-shadow: 0 8px 24px rgba(0,0,0,0.2);
     }
 
+    .cta-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
     .cta-note {
       margin-top: 16px;
       font-size: 13px;
       color: rgba(255,255,255,0.35);
+    }
+
+    .lead-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-width: 420px;
+      margin: 0 auto 16px;
+      text-align: left;
+    }
+
+    .lead-form input {
+      font-family: var(--font-body);
+      font-size: 15px;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.08);
+      color: #fefefe;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .lead-form input::placeholder {
+      color: rgba(255,255,255,0.35);
+    }
+
+    .lead-form input:focus {
+      border-color: rgba(255,255,255,0.4);
+      background: rgba(255,255,255,0.12);
+    }
+
+    .lead-form-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .lead-form-row input {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .lead-form-success {
+      padding: 24px;
+      border-radius: var(--radius);
+      background: rgba(59,184,168,0.15);
+      border: 1px solid rgba(59,184,168,0.3);
+      color: #fefefe;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+
+    .lead-form-error {
+      font-size: 13px;
+      color: #ff8a80;
+      margin-top: -4px;
+    }
+
+    @media (max-width: 600px) {
+      .lead-form-row {
+        flex-direction: column;
+      }
     }
 
     /* ── FOOTER ── */
@@ -1402,7 +1473,19 @@
     <div class="cta-inner">
       <h2 class="section-title">Покажем результат на вашей закупке</h2>
       <p class="cta-sub">Запустите пилот на реальных данных — с сопровождением нашей команды. Бесплатно, без обязательств, без интеграций.</p>
-      <a href="mailto:info@zakupai.tech?subject=%D0%97%D0%B0%D1%8F%D0%B2%D0%BA%D0%B0%20%D0%BD%D0%B0%20%D0%BF%D0%B8%D0%BB%D0%BE%D1%82" class="cta-btn">Оставить заявку на пилот</a>
+      <form class="lead-form" id="leadForm">
+        <input type="text" name="name" placeholder="Имя" required>
+        <input type="email" name="email" placeholder="Рабочий email" required>
+        <div class="lead-form-row">
+          <input type="text" name="company" placeholder="Компания">
+          <input type="tel" name="phone" placeholder="Телефон">
+        </div>
+        <button type="submit" class="cta-btn">Оставить заявку на пилот</button>
+        <div class="lead-form-error" id="leadFormError" style="display:none"></div>
+      </form>
+      <div class="lead-form-success" id="leadFormSuccess" style="display:none">
+        Спасибо! Мы получили вашу заявку и свяжемся с вами в ближайшее время.
+      </div>
       <div class="cta-note">Количество пилотов ограничено</div>
     </div>
   </section>
@@ -1452,12 +1535,48 @@
       });
     });
 
-    // --- Yandex.Metrika goals ---
+    // --- Lead form ---
+    document.getElementById('leadForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var form = this;
+      var btn = form.querySelector('button[type="submit"]');
+      var errorEl = document.getElementById('leadFormError');
+      var successEl = document.getElementById('leadFormSuccess');
 
-    // 1. Click "Оставить заявку на пилот" (mailto CTA)
-    document.querySelector('.cta-btn').addEventListener('click', function () {
-      ym(108458197, 'reachGoal', 'pilot_request');
+      errorEl.style.display = 'none';
+      btn.disabled = true;
+      btn.textContent = 'Отправляем...';
+
+      var data = {
+        name: form.name.value.trim(),
+        email: form.email.value.trim(),
+        company: form.company.value.trim() || null,
+        phone: form.phone.value.trim() || null
+      };
+
+      fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      .then(function (res) {
+        if (!res.ok) throw new Error('Ошибка отправки');
+        return res.json();
+      })
+      .then(function () {
+        form.style.display = 'none';
+        successEl.style.display = 'block';
+        ym(108458197, 'reachGoal', 'pilot_request');
+      })
+      .catch(function () {
+        errorEl.textContent = 'Не удалось отправить заявку. Попробуйте позже или напишите на info@zakupai.tech';
+        errorEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Оставить заявку на пилот';
+      });
     });
+
+    // --- Yandex.Metrika goals ---
 
     // 2. Click "Запустить пилот" (hero + navbar links to #pilot)
     document.querySelectorAll('a[href="#pilot"]').forEach(function (a) {

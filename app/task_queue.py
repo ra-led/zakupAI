@@ -186,7 +186,7 @@ class TaskQueue:
                 select(LLMTask).where(
                     LLMTask.status == "in_progress",
                     LLMTask.task_type.in_(
-                        ["supplier_search", "supplier_search_perplexity", "lots_extraction", "bid_lots_extraction"]
+                        ["lots_extraction", "bid_lots_extraction"]
                     ),
                 )
             ).all()
@@ -207,8 +207,6 @@ class TaskQueue:
                         LLMTask.status == "queued",
                         LLMTask.task_type.in_(
                             [
-                                "supplier_search",
-                                "supplier_search_perplexity",
                                 "lots_extraction",
                                 "bid_lots_extraction",
                             ]

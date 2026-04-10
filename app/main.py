@@ -443,7 +443,14 @@ def get_purchase_lots(
         except Exception as exc:
             print(f"[lots_extraction] enqueue failed: {exc}")
 
-    status_value = task.status if task else ("completed" if lots else "queued")
+    if task:
+        status_value = task.status
+    elif lots:
+        status_value = "completed"
+    elif not purchase.terms_text:
+        status_value = "idle"
+    else:
+        status_value = "queued"
 
     error_text: Optional[str] = None
     if task and task.status == "failed" and task.output_text:

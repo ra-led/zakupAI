@@ -237,8 +237,25 @@
     lastLotsStatus = null;
     lastLotsError = null;
     currentLots = [];
+    // Reset DOM that can leak across purchases
+    var searchStatusEl = $('search-status');
+    if (searchStatusEl) {
+      searchStatusEl.classList.add('hidden');
+      searchStatusEl.innerHTML = '';
+    }
+    stopSearchTimer();
+    searchStartTime = null;
+    var lotsContainer = $('lots-container');
+    if (lotsContainer) lotsContainer.innerHTML = '';
     updateSelectorText();
     renderPurchaseDropdown();
+    // Fetch full purchase (dashboard endpoint omits terms_text)
+    try {
+      var full = await API.apiFetch('/purchases/' + purchase.id);
+      if (full && currentPurchase && currentPurchase.id === purchase.id) {
+        currentPurchase = Object.assign({}, currentPurchase, full);
+      }
+    } catch (_) { /* fallback to dashboard data */ }
     // Load all data
     loadLots();
     loadSuppliers();
@@ -410,6 +427,9 @@
     } else if (status === 'failed') {
       statusEl.classList.add('status-draft');
       textEl.textContent = 'Ошибка распознавания';
+    } else if (status === 'idle') {
+      statusEl.classList.add('status-draft');
+      textEl.textContent = '--';
     } else {
       statusEl.classList.add('status-draft');
       textEl.textContent = '--';
@@ -420,8 +440,8 @@
     var container = $('lots-container');
     var uploadCard = $('tz-upload-card');
 
-    // Empty + failed/empty-result → show error block with retry
-    if (!currentLots.length && (lastLotsStatus === 'failed' || (lastLotsStatus === 'completed' && currentPurchase && currentPurchase.terms_text))) {
+    // Empty + failed → show error block with retry
+    if (!currentLots.length && lastLotsStatus === 'failed') {
       var msg = lastLotsError
         ? escapeHtml(lastLotsError)
         : 'Не удалось распознать лоты в ТЗ. Попробуйте ещё раз или проверьте текст.';
@@ -443,6 +463,7 @@
       return;
     }
 
+    // Empty + idle (no terms_text yet) or any other terminal status → upload prompt
     if (!currentLots.length) {
       container.innerHTML = '<div class="empty-state">Загрузите ТЗ или добавьте лоты вручную</div>';
       if (uploadCard) uploadCard.style.display = '';
@@ -567,10 +588,21 @@
         } else if (state.status === 'completed') {
           loadSuppliers();
         }
+      } else {
+        // No search task for this purchase — make sure stale status block is hidden
+        var el = $('search-status');
+        if (el) {
+          el.classList.add('hidden');
+          el.innerHTML = '';
+        }
       }
     } catch (_) {
       // No active search — that's fine
-      $('search-status').classList.add('hidden');
+      var el2 = $('search-status');
+      if (el2) {
+        el2.classList.add('hidden');
+        el2.innerHTML = '';
+      }
     }
   }
 

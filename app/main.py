@@ -495,7 +495,7 @@ def get_lots_diagnostics(
     if not purchase or purchase.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
 
-    tasks = session.exec(
+    lots_tasks = session.exec(
         select(LLMTask)
         .where(
             LLMTask.purchase_id == purchase_id,
@@ -504,12 +504,52 @@ def get_lots_diagnostics(
         .order_by(col(LLMTask.created_at).desc())
     ).all()
 
+    supplier_tasks = session.exec(
+        select(LLMTask)
+        .where(
+            LLMTask.purchase_id == purchase_id,
+            LLMTask.task_type.in_(["supplier_search", "supplier_search_perplexity"]),
+        )
+        .order_by(col(LLMTask.created_at).desc())
+    ).all()
+
+    other_tasks = session.exec(
+        select(LLMTask)
+        .where(
+            LLMTask.purchase_id == purchase_id,
+            ~LLMTask.task_type.in_(
+                ["lots_extraction", "supplier_search", "supplier_search_perplexity"]
+            ),
+        )
+        .order_by(col(LLMTask.created_at).desc())
+    ).all()
+
     lots_count = session.exec(
         select(func.count(Lot.id)).where(Lot.purchase_id == purchase_id)
     ).one()
 
+    suppliers_count = session.exec(
+        select(func.count(Supplier.id)).where(Supplier.purchase_id == purchase_id)
+    ).one()
+
     embedded_queue_enabled = os.getenv("ENABLE_EMBEDDED_QUEUE", "false").lower() == "true"
     worker_alive = task_queue._thread.is_alive() if hasattr(task_queue, "_thread") else False
+
+    def _serialize(t: LLMTask) -> dict:
+        age_seconds = None
+        if t.created_at:
+            age_seconds = int((datetime.utcnow() - t.created_at).total_seconds())
+        return {
+            "id": t.id,
+            "status": t.status,
+            "task_type": t.task_type,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "age_seconds": age_seconds,
+            "input_preview": (t.input_text or "")[:500],
+            "output_preview": (t.output_text or "")[:2000],
+            "input_length": len(t.input_text or ""),
+            "output_length": len(t.output_text or ""),
+        }
 
     return {
         "purchase_id": purchase_id,
@@ -518,24 +558,17 @@ def get_lots_diagnostics(
         "terms_text_length": len(purchase.terms_text or ""),
         "terms_text_preview": (purchase.terms_text or "")[:300],
         "lots_in_db": lots_count,
+        "suppliers_in_db": suppliers_count,
         "embedded_queue_enabled": embedded_queue_enabled,
         "worker_thread_alive": worker_alive,
         "openai_api_key_set": bool(os.getenv("OPENAI_API_KEY")),
         "openai_base_url": os.getenv("OPENAI_BASE_URL") or None,
         "openai_model": os.getenv("OPENAI_MODEL", "gpt-5-mini"),
-        "tasks": [
-            {
-                "id": t.id,
-                "status": t.status,
-                "task_type": t.task_type,
-                "created_at": t.created_at.isoformat() if t.created_at else None,
-                "input_preview": (t.input_text or "")[:500],
-                "output_preview": (t.output_text or "")[:2000],
-                "input_length": len(t.input_text or ""),
-                "output_length": len(t.output_text or ""),
-            }
-            for t in tasks[:10]
-        ],
+        "lots_tasks": [_serialize(t) for t in lots_tasks[:10]],
+        "supplier_tasks": [_serialize(t) for t in supplier_tasks[:10]],
+        "other_tasks": [_serialize(t) for t in other_tasks[:5]],
+        # Backward-compat alias for the old field name
+        "tasks": [_serialize(t) for t in lots_tasks[:10]],
     }
 
 

@@ -1628,6 +1628,19 @@
 
   var lastDiagPayload = null;
 
+  function _formatTaskBlock(t) {
+    var ageStr = '';
+    if (typeof t.age_seconds === 'number') {
+      var s = t.age_seconds;
+      var m = Math.floor(s / 60);
+      var sec = s % 60;
+      ageStr = ' (' + (m > 0 ? m + 'м ' : '') + sec + 'с назад)';
+    }
+    return '\n--- Task #' + t.id + ' [' + t.status + '] ' + t.task_type + ' ' + (t.created_at || '') + ageStr + ' ---\n' +
+      'Input (' + t.input_length + ' chars):\n' + (t.input_preview || '') + '\n' +
+      'Output (' + t.output_length + ' chars):\n' + (t.output_preview || '') + '\n';
+  }
+
   async function loadLotsDiagnostics() {
     var contentEl = $('diag-content');
     if (!currentPurchase) {
@@ -1638,13 +1651,18 @@
     try {
       var data = await API.apiFetch('/purchases/' + currentPurchase.id + '/lots/diagnostics');
       lastDiagPayload = data;
-      // Pretty-print with key insights at the top
+
+      var lotsTasks = data.lots_tasks || data.tasks || [];
+      var supplierTasks = data.supplier_tasks || [];
+      var otherTasks = data.other_tasks || [];
+
       var summary = [
         '=== СВОДКА ===',
         'Закупка ID:           ' + data.purchase_id,
         'Статус закупки:       ' + data.purchase_status,
         'ТЗ загружено:         ' + (data.has_terms_text ? 'да (' + data.terms_text_length + ' символов)' : 'НЕТ'),
         'Лотов в БД:           ' + data.lots_in_db,
+        'Поставщиков в БД:     ' + (typeof data.suppliers_in_db === 'number' ? data.suppliers_in_db : '(нет данных)'),
         '',
         '=== ВОРКЕР ===',
         'ENABLE_EMBEDDED_QUEUE: ' + data.embedded_queue_enabled,
@@ -1657,23 +1675,30 @@
         '',
         '=== ПРЕВЬЮ ТЗ ===',
         data.terms_text_preview || '(пусто)',
-        '',
-        '=== ЗАДАЧИ (последние ' + (data.tasks ? data.tasks.length : 0) + ') ===',
       ].join('\n');
 
-      var tasksText = '';
-      if (data.tasks && data.tasks.length) {
-        for (var i = 0; i < data.tasks.length; i++) {
-          var t = data.tasks[i];
-          tasksText += '\n--- Task #' + t.id + ' [' + t.status + '] (' + t.created_at + ') ---\n';
-          tasksText += 'Input (' + t.input_length + ' chars):\n' + t.input_preview + '\n';
-          tasksText += 'Output (' + t.output_length + ' chars):\n' + t.output_preview + '\n';
-        }
+      var lotsSection = '\n\n=== РАСПОЗНАВАНИЕ ЛОТОВ (' + lotsTasks.length + ' задач) ===';
+      if (lotsTasks.length) {
+        for (var i = 0; i < lotsTasks.length; i++) lotsSection += _formatTaskBlock(lotsTasks[i]);
       } else {
-        tasksText = '\n(задач нет — extraction не запускалось)\n';
+        lotsSection += '\n(задач нет — extraction не запускалось)\n';
       }
 
-      contentEl.textContent = summary + tasksText + '\n\n=== СЫРОЙ JSON ===\n' + JSON.stringify(data, null, 2);
+      var supplierSection = '\n\n=== ПОИСК ПОСТАВЩИКОВ (' + supplierTasks.length + ' задач) ===';
+      if (supplierTasks.length) {
+        for (var j = 0; j < supplierTasks.length; j++) supplierSection += _formatTaskBlock(supplierTasks[j]);
+      } else {
+        supplierSection += '\n(задач нет — поиск ещё не запускался)\n';
+      }
+
+      var otherSection = '';
+      if (otherTasks.length) {
+        otherSection = '\n\n=== ДРУГИЕ ЗАДАЧИ (' + otherTasks.length + ') ===';
+        for (var k = 0; k < otherTasks.length; k++) otherSection += _formatTaskBlock(otherTasks[k]);
+      }
+
+      contentEl.textContent = summary + lotsSection + supplierSection + otherSection +
+        '\n\n=== СЫРОЙ JSON ===\n' + JSON.stringify(data, null, 2);
       logDiag('diagnostics', data);
     } catch (e) {
       contentEl.textContent = 'Ошибка загрузки диагностики: ' + e.message;

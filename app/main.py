@@ -544,6 +544,23 @@ def get_lots_diagnostics(
         seconds_since_update = None
         if updated_at:
             seconds_since_update = int((now - updated_at).total_seconds())
+
+        # Parse the FULL output_text JSON before truncating, so we can
+        # surface the live `note` field even when the raw payload is huge
+        # (search outputs easily exceed 30k chars and get cut mid-string
+        # in output_preview, breaking any downstream json.loads).
+        output_text_full = t.output_text or ""
+        note_value: Optional[str] = None
+        error_value: Optional[str] = None
+        if output_text_full:
+            try:
+                parsed_full = json.loads(output_text_full)
+                if isinstance(parsed_full, dict):
+                    note_value = parsed_full.get("note")
+                    error_value = parsed_full.get("error")
+            except Exception:
+                pass
+
         return {
             "id": t.id,
             "status": t.status,
@@ -552,10 +569,12 @@ def get_lots_diagnostics(
             "updated_at": updated_at.isoformat() if updated_at else None,
             "age_seconds": age_seconds,
             "seconds_since_update": seconds_since_update,
+            "note": note_value,
+            "error": error_value,
             "input_preview": (t.input_text or "")[:500],
-            "output_preview": (t.output_text or "")[:2000],
+            "output_preview": output_text_full[:2000],
             "input_length": len(t.input_text or ""),
-            "output_length": len(t.output_text or ""),
+            "output_length": len(output_text_full),
         }
 
     serialized_lots = [_serialize(t) for t in lots_tasks[:10]]
@@ -572,17 +591,8 @@ def get_lots_diagnostics(
         return f"{s}с"
 
     def _parse_note(task_dict: dict) -> Optional[str]:
-        """Extract 'note' field from a task's output_preview JSON if present."""
-        out = task_dict.get("output_preview") or ""
-        if not out:
-            return None
-        try:
-            data = json.loads(out)
-            if isinstance(data, dict):
-                return data.get("note")
-        except Exception:
-            return None
-        return None
+        """Read the 'note' field that the serializer pre-parsed from full output_text."""
+        return task_dict.get("note")
 
     def _parse_crawl_progress(note: Optional[str]) -> Optional[dict]:
         """Pull '12/47' style site count out of a note string written by the ETL worker.

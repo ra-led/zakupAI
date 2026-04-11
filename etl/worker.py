@@ -755,14 +755,28 @@ def _process_task(task: LLMTask) -> None:
             shutdown_driver()
 
 
+MAX_RECOVERY_AGE_SECONDS = 30 * 60  # 30 minutes
+
+
 def _recover_stale_tasks() -> None:
     """Reset tasks left in 'in_progress' on a previous worker run.
 
-    Without this, a container restart mid-task leaves the LLMTask stuck
-    forever — the next enqueue dedup-check finds the in_progress row and
-    refuses to create a new one. This is exactly what blocked the
-    Радиодетали flow on 2026-04-11.
+    Two cases:
+
+    1. Task was started recently (< 30 min ago) and the container died
+       mid-run. Requeue it so the worker picks it up. The user has been
+       waiting and will see incremental progress on next pickup.
+
+    2. Task was started > 30 min ago. This usually means we've been
+       restarting it across multiple deploys (the supplier_search
+       pipeline can take 15+ min, so a deploy in the middle kills it,
+       and on restart we requeue it, restarting from scratch — repeat).
+       In this case, mark it FAILED with a clear message so the user
+       can manually retry instead of being trapped in an infinite
+       restart loop.
     """
+    from datetime import datetime
+    now = datetime.utcnow()
     with Session(engine) as session:
         stale = session.exec(
             select(LLMTask).where(
@@ -773,12 +787,38 @@ def _recover_stale_tasks() -> None:
             )
         ).all()
         for t in stale:
+            age = (now - t.created_at).total_seconds() if t.created_at else 0
+            if age > MAX_RECOVERY_AGE_SECONDS:
+                logger.warning(
+                    "[etl] task id=%s type=%s is too old to recover (age=%.0fs > %ds) — marking failed",
+                    t.id,
+                    t.task_type,
+                    age,
+                    MAX_RECOVERY_AGE_SECONDS,
+                )
+                t.status = "failed"
+                t.output_text = json.dumps(
+                    {
+                        "error": (
+                            f"Задача отменена: возраст {int(age // 60)} мин превышает лимит "
+                            f"восстановления ({MAX_RECOVERY_AGE_SECONDS // 60} мин). "
+                            f"Скорее всего пайплайн перезапускался несколько раз из-за деплоев. "
+                            f"Запустите поиск заново."
+                        )
+                    },
+                    ensure_ascii=False,
+                )
+                t.updated_at = now
+                session.add(t)
+                continue
             logger.warning(
-                "[etl] requeueing stale task id=%s type=%s (likely a previous worker died)",
+                "[etl] requeueing stale task id=%s type=%s age=%.0fs",
                 t.id,
                 t.task_type,
+                age,
             )
             t.status = "queued"
+            t.updated_at = now
             session.add(t)
         if stale:
             session.commit()

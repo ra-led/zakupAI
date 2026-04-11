@@ -115,7 +115,26 @@ curl -s https://app.zakupai.tech/api/health
 
 ### Self-service диагностика
 
-В UI рядом со статусом «Лоты» есть кнопка **Диагностика** — открывает модалку с дампом `GET /purchases/{id}/lots/diagnostics`: статус закупки, ENABLE_EMBEDDED_QUEUE, worker thread alive, OpenAI config, последние 10 LLMTask с input/output превью. Кнопка «Скопировать JSON» — для быстрой передачи в bug-report.
+В UI рядом со статусом «Лоты» есть кнопка **Диагностика** — открывает модалку с дампом `GET /purchases/{id}/lots/diagnostics`. Структура ответа:
+
+1. **`summary`** — сводка по подсистемам (`lots`, `supplier_search`, `infrastructure`) с verdict-ами (`ok`/`running`/`stuck`/`failed`/`idle`/`broken`), human-readable статусом с эмодзи, и `action_hint` для пользователя. Это первое что нужно читать.
+2. **`summary.supplier_search.crawl_progress`** — `{processed, total, percent}` для краулинга сайтов. UI рисует ASCII прогресс-бар.
+3. **`lots_tasks` / `supplier_tasks` / `other_tasks`** — раздельные секции с задачами. Каждая задача имеет `age_seconds`, `seconds_since_update`, `note`, `error` (предпарсенные из ПОЛНОГО `output_text`, не из truncated preview).
+4. Сырой JSON для копирования через кнопку «Скопировать JSON».
+
+В модалке есть кнопки **«Сбросить распознавание»** и **«Сбросить поиск поставщиков»** (POST `/purchases/{id}/tasks/reset?task_type=X`) для принудительного fail-а зависших задач.
+
+### Long-running pipelines: incremental progress
+
+ETL `_collect_combined_contacts` принимает `progress_cb` и пишет partial-результат в `LLMTask.output_text` после каждого этапа (Yandex done, Perplexity done, найдено N сайтов, обход выполнен). `collect_contacts_from_websites` дополнительно дёргает callback после **каждого сайта** с ETA — формат note `"Краулинг сайтов: 12/47 (текущий: example.com, осталось ~10м)"`. Diagnostics regex-парсит эту строку и возвращает `crawl_progress: {processed, total, percent}` для UI.
+
+`LLMTask.updated_at` (миграция в `_ensure_llmtask_columns`) тикает на каждом write — diagnostics возвращает `seconds_since_update` чтобы отличить «работает медленно» от «умер 30 минут назад». Помечает задачу `⚠ ВОЗМОЖНО ЗАВИСЛА` если `seconds_since_update > 120`.
+
+### Recovery loops при деплоях
+
+ETL `_recover_stale_tasks` различает recoverable (`age < 30 min`) и abandoned (`age > 30 min`) задачи. Без этого долгий пайплайн (10-15 мин) застревал в бесконечном цикле при частых деплоях: каждый деплой → restart → recovery requeue → start over. Сейчас abandoned задачи помечаются `failed` с понятным сообщением, требуется ручной retry.
+
+Для коротких задач (lots_extraction, ~30s) аналогичная защита в `task_queue.enqueue_lots_extraction_task` с порогом 5 минут — освобождает enqueue от зависших in_progress.
 
 ### Кэш-стратегия nginx
 

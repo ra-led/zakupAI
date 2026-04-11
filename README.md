@@ -82,6 +82,50 @@
 - Фоновый воркер (`app.task_queue`) последовательно берёт задачи из БД, строит поисковые запросы и записывает результат в `LLMTask.output_text`.
 - Статус и подготовленные запросы доступны через `POST /purchases/{purchase_id}/suppliers/search` (возвращает id задачи, статус и подготовленные запросы).
 
+## Production deploy
+
+Деплой в прод (https://app.zakupai.tech) автоматический через `.github/workflows/deploy.yml` на каждый push в `main`.
+
+### Защита от тихих провалов
+
+После инцидента 2026-04-11 (Docker layer cache + молчаливый CD оставили live сайт со старым кодом 4 коммита подряд) пайплайн состоит из 6 шагов и **внешне верифицирует результат**:
+
+1. **validate / Python syntax check** — `py_compile` всего `app/` и `etl/`
+2. **validate / JavaScript syntax check** — `node --check` всего `frontend/js/`
+3. **validate / HTML smoke** — `index.html` существует и ссылается на `app.js`
+4. **deploy / Deploy via SSH:**
+   - `git fetch + git reset --hard ${SHA}` (НЕ `git pull` — может молча провалиться)
+   - Инжект `frontend/build.txt` с `${GIT_SHA} ${TIMESTAMP}` (gitignored, попадает в образ через `COPY .`)
+   - `docker compose build --no-cache frontend` (ОБЯЗАТЕЛЬНО — Docker BuildKit имеет привычку возвращать кэшированный COPY-слой; cost 2 секунды)
+   - `docker compose up -d --force-recreate --no-deps frontend` (ОБЯЗАТЕЛЬНО — иначе compose не пересоздаёт контейнер если digest не сменился)
+5. **deploy / Verify live frontend serves the new SHA** — `curl https://app.zakupai.tech/build.txt?cb=$(date +%s)` с `Cache-Control: no-cache`, retry 10×3s, fail если SHA не совпал
+6. **deploy / Verify backend is healthy** — `curl https://app.zakupai.tech/api/health`, retry 5×3s
+
+**Зелёный workflow = пользователь видит этот коммит на проде и backend жив.** Не «команды отработали».
+
+### Локальная проверка что задеплоено
+
+```bash
+curl -s "https://app.zakupai.tech/build.txt?cb=$(date +%s)"
+# вернёт: <SHA> <ISO timestamp>
+
+curl -s https://app.zakupai.tech/api/health
+# {"status":"ok"}
+```
+
+### Self-service диагностика
+
+В UI рядом со статусом «Лоты» есть кнопка **Диагностика** — открывает модалку с дампом `GET /purchases/{id}/lots/diagnostics`: статус закупки, ENABLE_EMBEDDED_QUEUE, worker thread alive, OpenAI config, последние 10 LLMTask с input/output превью. Кнопка «Скопировать JSON» — для быстрой передачи в bug-report.
+
+### Кэш-стратегия nginx
+
+`frontend/nginx.conf`:
+- `*.html` и SPA fallback → `Cache-Control: no-store, no-cache, must-revalidate` — никогда не кэшируется (иначе пользователи висят на старых script-тегах)
+- `*.css/*.js` → `Cache-Control: no-cache, must-revalidate + etag` — query-string busts работают, но браузер всё равно ревалидирует
+- картинки/шрифты → `expires 7d immutable` (они не меняются)
+
+`immutable` cache подходит ТОЛЬКО для версионированных URL (`app.abc123.js`). Для статичных имён — всегда `no-cache + etag`.
+
 ## Быстрый сценарий через cURL
 ```bash
 # регистрация

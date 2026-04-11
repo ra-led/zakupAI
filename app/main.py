@@ -1257,7 +1257,13 @@ def search_suppliers(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
 
     state = get_supplier_search_state(purchase_id)
-    if not state:
+    # Only return the existing state if it's still active. If the latest
+    # task is in a terminal state (failed / completed without results),
+    # we MUST create a new task — otherwise clicking "Запустить поиск"
+    # silently re-renders the old failed state and looks like nothing
+    # happened. (See incident 2026-04-12.)
+    is_active_state = state is not None and state.status in ("queued", "in_progress")
+    if not is_active_state:
         if payload.provider == "perplexity":
             task = task_queue.enqueue_supplier_search_perplexity_task(
                 purchase_id,

@@ -726,9 +726,19 @@
       searchStartTime = null;
       statusEl.className = 'search-status';
       statusEl.style.background = 'var(--danger-bg)';
-      statusEl.style.flexDirection = '';
-      statusEl.style.alignItems = '';
-      statusEl.innerHTML = '<div style="color:var(--danger);font-size:16px">&#10007;</div><div><strong style="color:var(--danger)">Ошибка поиска</strong></div>';
+      statusEl.style.flexDirection = 'column';
+      statusEl.style.alignItems = 'stretch';
+      // Try to extract a human-readable error from the note field
+      var errMsg = 'Поиск завершился с ошибкой. Нажмите «Запустить поиск» ещё раз.';
+      if (state.note && state.note.length > 0 && state.note !== 'Поиск поставщиков выполняется') {
+        errMsg = state.note;
+      }
+      statusEl.innerHTML =
+        '<div style="display:flex;align-items:center;gap:12px">' +
+        '<div style="color:var(--danger);font-size:18px">&#10007;</div>' +
+        '<div><strong style="color:var(--danger)">Ошибка поиска</strong></div>' +
+        '</div>' +
+        '<div style="font-size:13px;color:var(--text-secondary);margin-top:8px;line-height:1.4">' + escapeHtml(errMsg) + '</div>';
     }
   }
 

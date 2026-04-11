@@ -69,11 +69,7 @@ jobs:
             python -c 'import urllib.request; r = urllib.request.urlopen(\"https://gisp.gov.ru/\", timeout=10); print(\"scraper got HTTP\", r.status)' 2>&1 || echo 'scraper failed'
             "
             echo "--- compose networks ---"
-            docker network ls | grep zakupai
-            BACKEND_NET=\$(docker inspect zakupai-backend-1 --format '{{range \$k, \$v := .NetworkSettings.Networks}}{{println \$k}}{{end}}' 2>/dev/null || true)
-            SCRAPER_NET=\$(docker inspect zakupai-gisp-scraper-1 --format '{{range \$k, \$v := .NetworkSettings.Networks}}{{println \$k}}{{end}}' 2>/dev/null || true)
-            echo "backend network(s):       \$BACKEND_NET"
-            echo "gisp-scraper network(s):  \$SCRAPER_NET"
+            docker network ls | grep zakupai || true
 
             echo ""
             echo "=== /pp719/$REG ==="

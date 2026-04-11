@@ -3,7 +3,7 @@ import logging
 import os
 import time
 import math
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 from sqlmodel import Session, select
@@ -96,27 +96,78 @@ def _upsert_suppliers(session: Session, task: LLMTask, merged_contacts: List[Dic
     return created
 
 
-def _collect_combined_contacts(terms_text: str, task_type: str) -> Dict:
+ProgressCallback = Optional[Callable[[Dict], None]]
+
+
+def _collect_combined_contacts(
+    terms_text: str,
+    task_type: str,
+    progress_cb: ProgressCallback = None,
+) -> Dict:
+    """Run the supplier-discovery pipeline.
+
+    progress_cb is invoked after each milestone with a partial result dict
+    so callers (the worker) can write intermediate progress to the DB.
+    The pipeline takes 5-15 minutes; without intermediate updates the
+    frontend cannot tell "stuck" from "in progress".
+    """
     yandex_result: Dict = {"queries": [], "search_output": [], "processed_contacts": [], "tz_summary": None}
     perplexity_result: Dict = {"queries": [], "search_output": [], "processed_contacts": []}
     notes: List[str] = []
 
+    def _emit(extra: Optional[Dict] = None) -> None:
+        if not progress_cb:
+            return
+        partial = {
+            "queries": (yandex_result.get("queries") or []) + (perplexity_result.get("queries") or []),
+            "tech_task_excerpt": terms_text[:160],
+            "note": "; ".join(notes) if notes else "Поиск поставщиков выполняется",
+            "search_output": [],
+            "processed_contacts": [],
+        }
+        if extra:
+            partial.update(extra)
+        try:
+            progress_cb(partial)
+        except Exception:  # noqa: BLE001
+            logger.exception("progress_cb failed (non-fatal)")
+
+    # Stage 0: kicked off
+    notes.append("Запуск пайплайна поиска")
+    _emit()
+    notes.pop()  # remove the temp marker so it doesn't pollute final note
+
     if task_type == "supplier_search":
         try:
+            logger.info("[supplier_search] starting Yandex stage")
             yandex_result = collect_yandex_search_output_from_text(terms_text)
             notes.append("Yandex поиск обработан")
+            logger.info(
+                "[supplier_search] Yandex done: queries=%s sites=%s",
+                len(yandex_result.get("queries") or []),
+                len(yandex_result.get("search_output") or []),
+            )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Yandex provider failed")
             notes.append(f"Yandex недоступен: {exc}")
+        _emit()
 
     try:
+        logger.info("[supplier_search] starting Perplexity stage")
         perplexity_result = search_suppliers_with_perplexity(terms_text)
         notes.append("Perplexity обработан")
+        logger.info(
+            "[supplier_search] Perplexity done: queries=%s sites=%s",
+            len(perplexity_result.get("queries") or []),
+            len(perplexity_result.get("search_output") or []),
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Perplexity provider failed")
         notes.append(f"Perplexity недоступен: {exc}")
         if task_type == "supplier_search_perplexity":
+            _emit()
             raise
+    _emit()
 
     # 1) Merge only search websites (without crawling contacts yet).
     combined_search_output = (yandex_result.get("search_output") or []) + (perplexity_result.get("search_output") or [])
@@ -134,7 +185,16 @@ def _collect_combined_contacts(terms_text: str, task_type: str) -> Dict:
         if item.get("website")
     ]
 
+    notes.append(f"Найдено сайтов для обхода: {len(websites_to_crawl)}")
+    _emit()
+    notes.pop()  # remove temp marker — final note will say "Обход сайтов выполнен"
+
     # 2) Crawl merged websites and collect contacts.
+    crawl_start = time.time()
+    logger.info(
+        "[supplier_search] starting crawl of %s websites",
+        len(websites_to_crawl),
+    )
     try:
         crawled = collect_contacts_from_websites(
             technical_task_text=terms_text,
@@ -145,6 +205,8 @@ def _collect_combined_contacts(terms_text: str, task_type: str) -> Dict:
         logger.exception("Website crawl failed")
         notes.append(f"Обход сайтов завершился с ошибкой: {exc}")
         crawled = {"processed_contacts": [], "search_output": []}
+    crawl_elapsed = int(time.time() - crawl_start)
+    logger.info("[supplier_search] crawl finished in %ss", crawl_elapsed)
     merged_contacts = merge_contacts(crawled.get("processed_contacts") or [], crawled.get("search_output") or [])
 
     merged_search_output = [
@@ -170,13 +232,17 @@ def _collect_combined_contacts(terms_text: str, task_type: str) -> Dict:
         }
         for item in merged_contacts
     ]
-    return {
+
+    notes.append(f"Обход сайтов выполнен: {len(websites_to_crawl)} шт.")
+    final_result = {
         "queries": (yandex_result.get("queries") or []) + (perplexity_result.get("queries") or []),
         "tech_task_excerpt": terms_text[:160],
-        "note": "; ".join(notes + [f"Обход сайтов выполнен: {len(websites_to_crawl)} шт."]),
+        "note": "; ".join(notes),
         "search_output": merged_search_output,
         "processed_contacts": merged_processed_contacts,
     }
+    _emit(final_result)
+    return final_result
 
 
 def _build_openrouter_client() -> OpenAI:
@@ -591,6 +657,19 @@ def _process_lot_comparison_task(task: LLMTask) -> None:
         session.commit()
 
 
+def _write_progress(task_id: int, partial: Dict) -> None:
+    """Persist intermediate progress so the frontend polling can see it."""
+    with Session(engine) as session:
+        task_in_db = session.get(LLMTask, task_id)
+        if not task_in_db:
+            return
+        # Keep status as in_progress; we just want to surface the note.
+        task_in_db.output_text = json.dumps(partial, ensure_ascii=False)
+        session.add(task_in_db)
+        session.commit()
+    logger.info("[progress] task=%s note=%r", task_id, partial.get("note"))
+
+
 def _process_task(task: LLMTask) -> None:
     if task.task_type == "lot_comparison":
         _process_lot_comparison_task(task)
@@ -600,7 +679,12 @@ def _process_task(task: LLMTask) -> None:
     terms_text = payload.get("terms_text", "")
 
     logger.info("Starting supplier search task %s", task.id)
-    result = _collect_combined_contacts(terms_text, task.task_type)
+    task_id = task.id  # capture for closure
+    result = _collect_combined_contacts(
+        terms_text,
+        task.task_type,
+        progress_cb=lambda partial: _write_progress(task_id, partial),
+    )
 
     with Session(engine) as session:
         task_in_db = session.get(LLMTask, task.id)
@@ -633,8 +717,39 @@ def _process_task(task: LLMTask) -> None:
             shutdown_driver()
 
 
+def _recover_stale_tasks() -> None:
+    """Reset tasks left in 'in_progress' on a previous worker run.
+
+    Without this, a container restart mid-task leaves the LLMTask stuck
+    forever — the next enqueue dedup-check finds the in_progress row and
+    refuses to create a new one. This is exactly what blocked the
+    Радиодетали flow on 2026-04-11.
+    """
+    with Session(engine) as session:
+        stale = session.exec(
+            select(LLMTask).where(
+                LLMTask.status == "in_progress",
+                LLMTask.task_type.in_(
+                    ["supplier_search", "supplier_search_perplexity", "lot_comparison"]
+                ),
+            )
+        ).all()
+        for t in stale:
+            logger.warning(
+                "[etl] requeueing stale task id=%s type=%s (likely a previous worker died)",
+                t.id,
+                t.task_type,
+            )
+            t.status = "queued"
+            session.add(t)
+        if stale:
+            session.commit()
+
+
 def run_worker() -> None:
     create_db_and_tables()
+    logger.info("[etl] worker starting")
+    _recover_stale_tasks()
     while True:
         with Session(engine) as session:
             task = session.exec(

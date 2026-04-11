@@ -35,6 +35,7 @@ they are cheap HTTP calls.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -168,15 +169,29 @@ def _extract_product_id(gisp_url: Optional[str]) -> Optional[str]:
 
 
 async def _fetch_pp719_records(registry_number: str) -> List[Dict[str, Any]]:
-    """POST to the PP-719v2 grid endpoint and return raw item dicts."""
+    """POST to the PP-719v2 grid endpoint and return raw item dicts.
+
+    NOTE on httpx vs curl: gisp.gov.ru's PP-719 grid endpoint hangs forever
+    on POST when httpx serializes the body via the ``json=`` shortcut. The
+    shortcut emits a chunked-encoded body, and the upstream server keeps
+    the connection open waiting for a Content-Length it never sees. We
+    serialize the JSON ourselves and pass it via ``content=`` so httpx
+    sets a real Content-Length header — that matches what curl does and
+    the server replies in ~120 ms.
+    """
     payload = {
         "opt": {
             "filter": ["product_reg_number_2023", "contains", registry_number]
         }
     }
-    async with httpx.AsyncClient(timeout=PP719_HTTP_TIMEOUT) as client:
+    body = json.dumps(payload).encode("utf-8")
+    async with httpx.AsyncClient(timeout=PP719_HTTP_TIMEOUT, http2=False) as client:
         try:
-            resp = await client.post(PP719_API_URL, json=payload, headers=_REGISTRY_HEADERS)
+            resp = await client.post(
+                PP719_API_URL,
+                content=body,
+                headers=_REGISTRY_HEADERS,
+            )
         except httpx.RequestError as exc:
             logger.warning("PP719 fetch failed: %s", exc)
             raise HTTPException(status_code=503, detail=f"GISP unreachable: {exc}")

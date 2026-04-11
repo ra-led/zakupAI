@@ -1027,6 +1027,228 @@
       to { opacity: 1; transform: none; }
     }
 
+    /* ── ENTERPRISE / ON-PREMISE ── */
+    .enterprise-section {
+      background: var(--text);
+      color: #fefefe;
+      max-width: none;
+      margin: 0;
+      padding: clamp(60px, 10vh, 100px) clamp(20px, 4vw, 48px);
+    }
+
+    .enterprise-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .enterprise-section .section-label { color: var(--teal); }
+    .enterprise-section .section-title { color: #fefefe; }
+    .enterprise-section .section-desc {
+      color: rgba(255,255,255,0.65);
+      max-width: 720px;
+    }
+
+    .enterprise-compare {
+      margin-top: 56px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    .enterprise-card {
+      padding: 32px;
+      border-radius: var(--radius-lg);
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.02);
+    }
+
+    .enterprise-card.is-featured {
+      background: linear-gradient(180deg, rgba(91,106,191,0.18), rgba(59,184,168,0.08));
+      border-color: rgba(91,106,191,0.45);
+      box-shadow: 0 8px 40px rgba(91,106,191,0.15);
+    }
+
+    .enterprise-card-tag {
+      display: inline-block;
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 4px;
+      margin-bottom: 18px;
+    }
+
+    .enterprise-card-tag.standard {
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.7);
+    }
+
+    .enterprise-card-tag.featured {
+      background: var(--teal);
+      color: var(--text);
+    }
+
+    .enterprise-card-title {
+      font-family: var(--font-display);
+      font-size: clamp(1.4rem, 2.2vw, 1.7rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 10px;
+      color: #fefefe;
+    }
+
+    .enterprise-card-sub {
+      font-size: 14px;
+      color: rgba(255,255,255,0.55);
+      margin-bottom: 24px;
+      line-height: 1.55;
+    }
+
+    .enterprise-points {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .enterprise-points li {
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 12px;
+      align-items: start;
+      font-size: 14px;
+      line-height: 1.55;
+      color: rgba(255,255,255,0.85);
+    }
+
+    .enterprise-points li svg {
+      width: 16px;
+      height: 16px;
+      margin-top: 3px;
+      flex-shrink: 0;
+    }
+
+    .enterprise-points .check { color: var(--teal); }
+    .enterprise-points .check-muted { color: rgba(255,255,255,0.4); }
+
+    .enterprise-cta {
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      font-size: 14px;
+      color: rgba(255,255,255,0.6);
+    }
+
+    .enterprise-cta a {
+      color: var(--teal);
+      text-decoration: none;
+      font-weight: 600;
+      border-bottom: 1px dashed rgba(59,184,168,0.4);
+      transition: border-color 0.2s;
+    }
+
+    .enterprise-cta a:hover { border-bottom-color: var(--teal); }
+
+    /* ── TEAM ── */
+    .team-layout {
+      margin-top: 40px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(32px, 5vw, 64px);
+      align-items: start;
+    }
+
+    .team-bios {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .team-bio {
+      padding: 18px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .team-bio:first-child {
+      padding-top: 0;
+      border-top: none;
+    }
+
+    .team-bio-role {
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 6px;
+    }
+
+    .team-bio-text {
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.6;
+    }
+
+    .team-bio-text strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .team-summary {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.65;
+    }
+
+    .team-summary strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .team-advantages {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .team-adv {
+      padding: 20px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      position: relative;
+    }
+
+    .team-adv-num {
+      font-family: var(--font-display);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 8px;
+      letter-spacing: 0.05em;
+    }
+
+    .team-adv-name {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
+    }
+
+    .team-adv-desc {
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.55;
+    }
+
     /* ── RESPONSIVE: TABLET ── */
     @media (max-width: 1024px) {
       .hero { grid-template-columns: 1fr; gap: 48px; }
@@ -1040,6 +1262,8 @@
       .number-item { border-left: none; padding: 0; }
       .security-layout { grid-template-columns: 1fr; }
       .security-diagram { margin-top: 8px; }
+      .enterprise-compare { grid-template-columns: 1fr; }
+      .team-layout { grid-template-columns: 1fr; gap: 32px; }
     }
 
     /* ── RESPONSIVE: MOBILE ── */
@@ -1105,6 +1329,9 @@
 
       .security-diagram { padding: 20px; }
 
+      .enterprise-card { padding: 24px; }
+      .enterprise-card-title { font-size: 1.4rem; }
+
       .cta-btn {
         padding: 18px 32px;
         font-size: 15px;
@@ -1149,6 +1376,8 @@
       <li><a href="#how">Как работает</a></li>
       <li><a href="#numbers">Результаты</a></li>
       <li><a href="#security">Безопасность</a></li>
+      <li><a href="#enterprise">On-premise</a></li>
+      <li><a href="#team">Основатели</a></li>
       <li><a href="#pilot" class="nav-cta">Запустить пилот</a></li>
     </ul>
     <button class="nav-burger" id="burger" aria-label="Меню">
@@ -1412,9 +1641,9 @@
 
   <!-- SECURITY -->
   <section class="section" id="security">
-    <div class="section-label reveal">Безопасность</div>
+    <div class="section-label reveal">Уровень 1 · Базовая защита</div>
     <h2 class="section-title reveal reveal-delay-1">Ваши документы остаются у вас</h2>
-    <p class="section-desc reveal reveal-delay-2">Исходные файлы не покидают сервер. В AI-модель передаются только извлечённые характеристики товаров — без названий компаний и контактов.</p>
+    <p class="section-desc reveal reveal-delay-2">Исходные файлы не покидают сервер. В AI-модель передаются только извлечённые характеристики товаров — без названий компаний и контактов. Достаточно для большинства компаний.</p>
 
     <div class="security-layout">
       <div class="security-points">
@@ -1435,8 +1664,8 @@
         <div class="security-point reveal reveal-delay-2">
           <div class="security-icon">03</div>
           <div>
-            <h4>Курс на российскую инфраструктуру</h4>
-            <p>Переход на собственные модели в российском облаке. Данные не покидают территорию РФ.</p>
+            <h4>Российская инфраструктура</h4>
+            <p>Серверы в РФ. Данные не покидают территорию страны. Соответствие требованиям 152-ФЗ.</p>
           </div>
         </div>
       </div>
@@ -1463,6 +1692,76 @@
             <div class="sec-flow-badge local">Локально</div>
             <span>Результат сравнения и проверки</span>
           </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ENTERPRISE / ON-PREMISE -->
+  <section class="enterprise-section" id="enterprise">
+    <div class="enterprise-inner">
+      <div class="section-label reveal">Уровень 2 · Полная изоляция</div>
+      <h2 class="section-title reveal reveal-delay-1">Если базовой защиты мало — есть on-premise</h2>
+      <p class="section-desc reveal reveal-delay-2">Когда служба ИБ требует, чтобы ни байт данных не уходил наружу, мы разворачиваем zakupAI прямо на ваших серверах. Документы, AI-модели, всё — внутри вашего периметра.</p>
+
+      <div class="enterprise-compare">
+        <div class="enterprise-card reveal">
+          <div class="enterprise-card-tag standard">Стандартный режим</div>
+          <div class="enterprise-card-title">SaaS</div>
+          <div class="enterprise-card-sub">Подходит большинству компаний. Запуск за минуты, без интеграций.</div>
+          <ul class="enterprise-points">
+            <li><svg class="check-muted" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Доступ через браузер, ничего ставить не нужно</span></li>
+            <li><svg class="check-muted" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Документы хранятся на нашем сервере</span></li>
+            <li><svg class="check-muted" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>В AI-модель уходят только характеристики товаров</span></li>
+          </ul>
+          <div class="enterprise-cta">По умолчанию для всех новых клиентов</div>
+        </div>
+
+        <div class="enterprise-card is-featured reveal reveal-delay-1">
+          <div class="enterprise-card-tag featured">Корпоративный режим</div>
+          <div class="enterprise-card-title">On-premise</div>
+          <div class="enterprise-card-sub">Для компаний с высокими требованиями к ИБ.</div>
+          <ul class="enterprise-points">
+            <li><svg class="check" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Развёртывание на вашей инфраструктуре</span></li>
+            <li><svg class="check" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Документы никогда не покидают ваш периметр</span></li>
+            <li><svg class="check" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Собственные fine-tuned модели работают локально</span></li>
+            <li><svg class="check" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Нет зависимости от внешних провайдеров LLM</span></li>
+          </ul>
+          <div class="enterprise-cta">По запросу — обсудим внедрение: <a href="mailto:info@zakupai.tech?subject=On-premise">info@zakupai.tech</a></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TEAM -->
+  <section class="section" id="team">
+    <div class="section-label reveal">Основатели</div>
+    <h2 class="section-title reveal reveal-delay-1">12 лет опыта в закупках</h2>
+    <p class="section-desc reveal reveal-delay-2">AI-стартапы в закупках обычно делают разработчики, которые ни разу не открывали zakupki.gov.ru. У нас обратная история.</p>
+
+    <div class="team-layout">
+      <div class="team-bios reveal reveal-delay-2">
+        <div class="team-bio">
+          <div class="team-bio-role">CEO</div>
+          <div class="team-bio-text"><strong>12+ лет в закупках</strong> в роли поставщика. Более сотни выигранных тендеров.</div>
+        </div>
+        <div class="team-bio">
+          <div class="team-bio-role">CTO (главный инженер)</div>
+          <div class="team-bio-text"><strong>10 лет в ML</strong> и собственный 7-летний опыт ведения фирмы-поставщика. Участвовал в тендерах лично — знает контекст не понаслышке.</div>
+        </div>
+        <p class="team-summary">Знаем, как поставщики маскируют несоответствия в КП, пользуются слабыми ТЗ и обходят нацрежим — потому что сами были по эту сторону. <strong>Теперь строим инструмент, который этого не пропустит.</strong></p>
+      </div>
+
+      <div class="team-advantages">
+        <div class="team-adv reveal reveal-delay-2">
+          <div class="team-adv-num">01</div>
+          <div class="team-adv-name">Глубокая экспертиза</div>
+          <div class="team-adv-desc">Правильно работаем с ПП-719, ПП-1875, ГИСП и баллами локализации — то, что универсальные решения упускают.</div>
+        </div>
+        <div class="team-adv reveal reveal-delay-3">
+          <div class="team-adv-num">02</div>
+          <div class="team-adv-name">Первое специализированное решение</div>
+          <div class="team-adv-desc">AI-сервис, созданный конкретно для тендерных закупок в РФ. Не обёртка над ChatGPT.</div>
         </div>
       </div>
     </div>

@@ -1179,16 +1179,15 @@
   function renderBidSelector() {
     var container = $('comparison-bid-selector');
     if (!currentBids.length) {
-      container.innerHTML = '<div class="empty-state" style="padding:16px;font-size:13px;width:100%;text-align:center;">Загрузите КП, чтобы выбрать поставщика для сравнения</div>';
+      container.innerHTML = '<div class="empty-state" style="padding:16px;font-size:13px;width:100%;text-align:center;">Загрузите КП для сравнения</div>';
       $('btn-compare').disabled = true;
       return;
     }
     var html = '';
     for (var i = 0; i < currentBids.length; i++) {
       var bid = currentBids[i];
-      var active = selectedBidId === bid.id ? ' active' : '';
       var lotCount = bid.lots ? bid.lots.length : 0;
-      html += '<div class="comp-supplier-tab' + active + '" data-bid-id="' + bid.id + '">' +
+      html += '<div class="comp-supplier-tab" data-bid-id="' + bid.id + '">' +
         '<span class="comp-supplier-indicator comp-supplier-indicator--pending"></span>' +
         '<div>' +
         '<div class="comp-supplier-tab-name">' + escapeHtml(bid.supplier_name || 'Поставщик') + '</div>' +
@@ -1196,15 +1195,7 @@
         '</div></div>';
     }
     container.innerHTML = html;
-
-    var cards = container.querySelectorAll('.comp-supplier-tab');
-    for (var j = 0; j < cards.length; j++) {
-      cards[j].addEventListener('click', function () {
-        selectedBidId = parseInt(this.getAttribute('data-bid-id'), 10);
-        $('btn-compare').disabled = false;
-        renderBidSelector();
-      });
-    }
+    $('btn-compare').disabled = false;
     updateComparisonZones();
   }
 
@@ -1298,21 +1289,20 @@
 
   function initComparison() {
     $('btn-compare').addEventListener('click', async function () {
-      if (!currentPurchase || !selectedBidId) return;
+      if (!currentPurchase) { showError('Сначала выберите закупку'); return; }
+      if (!currentBids.length) { showError('Сначала загрузите КП'); return; }
       try {
         this.disabled = true;
         $('comparison-results').innerHTML = '';
-        renderComparisonProgress([
-          {name: 'Загрузка данных', status: 'in_progress', detail: ''},
-          {name: 'Эмбеддинги лотов', status: 'pending', detail: ''},
-          {name: 'Сопоставление лотов (LLM)', status: 'pending', detail: ''},
-          {name: 'Сопоставление характеристик', status: 'pending', detail: ''},
-          {name: 'Формирование результата', status: 'pending', detail: ''},
-        ]);
-        await API.apiFetch('/purchases/' + currentPurchase.id + '/bids/' + selectedBidId + '/comparison', {
-          method: 'POST',
-        });
-        pollComparison();
+        // Start comparison for ALL bids
+        _comparisonBidQueue = currentBids.map(function (b) { return { bid_id: b.id, name: b.supplier_name || 'Поставщик', status: 'pending' }; });
+        _renderComparisonAllProgress();
+        for (var bi = 0; bi < currentBids.length; bi++) {
+          _comparisonBidQueue[bi].status = 'starting';
+          _renderComparisonAllProgress();
+          await API.apiFetch('/purchases/' + currentPurchase.id + '/bids/' + currentBids[bi].id + '/comparison', { method: 'POST' });
+        }
+        pollComparisonAll();
       } catch (e) {
         showError('Ошибка запуска сравнения: ' + e.message);
         this.disabled = false;
@@ -1402,65 +1392,126 @@
     initComparisonDiag();
   }
 
-  async function pollComparison() {
-    if (!currentPurchase || !selectedBidId) return;
-    try {
-      var result = await API.apiFetch('/purchases/' + currentPurchase.id + '/bids/' + selectedBidId + '/comparison');
-      if (result.status === 'queued' || result.status === 'in_progress') {
-        renderComparisonProgress(result.stages);
-        comparisonPollingTimer = setTimeout(pollComparison, 1000);
-      } else if (result.status === 'done' || result.status === 'completed') {
-        renderComparisonProgress(result.stages, true);
-        renderComparison(result.rows || []);
-        $('btn-compare').disabled = false;
-      } else if (result.status === 'failed') {
-        $('comparison-progress').innerHTML = '';
-        $('comparison-results').innerHTML = '<div class="card"><div class="card-body"><div class="info-block" style="background:var(--danger-bg);color:var(--danger)">Ошибка сравнения: ' + escapeHtml(result.note || 'неизвестная ошибка') + '</div></div></div>';
-        $('btn-compare').disabled = false;
-      } else {
-        $('comparison-progress').innerHTML = '';
-        $('comparison-results').innerHTML = '<div class="card"><div class="card-body"><div class="info-block" style="background:var(--danger-bg);color:var(--danger)">Статус: ' + escapeHtml(result.status || 'unknown') + '</div></div></div>';
-        $('btn-compare').disabled = false;
+  var _comparisonBidQueue = []; // [{bid_id, name, status, stages, rows}]
+
+  async function pollComparisonAll() {
+    if (!currentPurchase || !_comparisonBidQueue.length) return;
+    var allDone = true;
+    for (var i = 0; i < _comparisonBidQueue.length; i++) {
+      var entry = _comparisonBidQueue[i];
+      if (entry.status === 'done' || entry.status === 'failed') continue;
+      try {
+        var result = await API.apiFetch('/purchases/' + currentPurchase.id + '/bids/' + entry.bid_id + '/comparison');
+        if (result.status === 'queued' || result.status === 'in_progress') {
+          entry.status = 'in_progress';
+          entry.stages = result.stages;
+          allDone = false;
+        } else if (result.status === 'done' || result.status === 'completed') {
+          entry.status = 'done';
+          entry.stages = result.stages;
+          entry.rows = result.rows || [];
+        } else {
+          entry.status = 'failed';
+          entry.note = result.note || result.status;
+        }
+      } catch (e) {
+        entry.status = 'failed';
+        entry.note = e.message;
       }
-    } catch (e) {
-      showError('Ошибка получения результатов сравнения: ' + e.message);
+    }
+    _renderComparisonAllProgress();
+    if (allDone) {
       $('btn-compare').disabled = false;
+      setTimeout(function () { $('comparison-progress').innerHTML = ''; }, 2000);
+      _renderComparisonAllResults();
+    } else {
+      comparisonPollingTimer = setTimeout(pollComparisonAll, 1000);
     }
   }
 
-  function renderComparisonProgress(stages, done) {
+  function _renderComparisonAllProgress() {
     var el = $('comparison-progress');
     if (!el) return;
-    if (!stages || !stages.length) {
-      if (!done) el.innerHTML = '<div class="card"><div class="card-body"><div class="search-status"><div class="spinner"></div><div><strong>Сравнение в процессе...</strong></div></div></div></div>';
-      else el.innerHTML = '';
-      return;
-    }
     var html = '<div class="card" style="margin-bottom:12px"><div class="card-body">';
-    html += '<div style="font-weight:600;margin-bottom:8px">Этапы сравнения</div>';
-    for (var i = 0; i < stages.length; i++) {
-      var s = stages[i];
-      var icon = '&#9675;';
-      var color = 'var(--text-secondary)';
-      if (s.status === 'done') { icon = '<span style="color:var(--success)">&#10003;</span>'; color = 'var(--text)'; }
-      else if (s.status === 'in_progress') { icon = '<div class="spinner" style="width:14px;height:14px;display:inline-block"></div>'; color = 'var(--accent)'; }
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;color:' + color + '">';
-      html += '<span style="width:20px;text-align:center">' + icon + '</span>';
-      html += '<span>' + escapeHtml(s.name) + '</span>';
-      if (s.detail) html += '<span style="color:var(--text-secondary);font-size:12px;margin-left:auto">' + escapeHtml(s.detail) + '</span>';
+    html += '<div style="font-weight:600;margin-bottom:10px">Сравнение КП с ТЗ</div>';
+    for (var b = 0; b < _comparisonBidQueue.length; b++) {
+      var entry = _comparisonBidQueue[b];
+      var bidIcon = '&#9675;';
+      var bidColor = 'var(--text-secondary)';
+      if (entry.status === 'done') { bidIcon = '<span style="color:var(--success)">&#10003;</span>'; bidColor = 'var(--text)'; }
+      else if (entry.status === 'in_progress' || entry.status === 'starting') { bidIcon = '<div class="spinner" style="width:14px;height:14px;display:inline-block"></div>'; bidColor = 'var(--accent)'; }
+      else if (entry.status === 'failed') { bidIcon = '<span style="color:var(--danger)">&#10007;</span>'; bidColor = 'var(--danger)'; }
+      html += '<div style="margin-bottom:8px">';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;color:' + bidColor + ';font-weight:500">';
+      html += '<span style="width:20px;text-align:center">' + bidIcon + '</span>';
+      html += '<span>' + escapeHtml(entry.name) + '</span>';
+      html += '</div>';
+      // Show stages for in-progress bid
+      if (entry.stages && (entry.status === 'in_progress' || entry.status === 'done')) {
+        for (var si = 0; si < entry.stages.length; si++) {
+          var s = entry.stages[si];
+          var sIcon = '&#9675;', sColor = 'var(--text-secondary)';
+          if (s.status === 'done') { sIcon = '<span style="color:var(--success)">&#10003;</span>'; sColor = 'var(--text)'; }
+          else if (s.status === 'in_progress') { sIcon = '<div class="spinner" style="width:12px;height:12px;display:inline-block"></div>'; sColor = 'var(--accent)'; }
+          html += '<div style="display:flex;align-items:center;gap:8px;padding:2px 0 2px 28px;color:' + sColor + ';font-size:13px">';
+          html += '<span style="width:16px;text-align:center">' + sIcon + '</span>';
+          html += '<span>' + escapeHtml(s.name) + '</span>';
+          if (s.detail) html += '<span style="color:var(--text-secondary);font-size:12px;margin-left:auto">' + escapeHtml(s.detail) + '</span>';
+          html += '</div>';
+        }
+      }
       html += '</div>';
     }
     html += '</div></div>';
     el.innerHTML = html;
-    if (done) setTimeout(function () { el.innerHTML = ''; }, 3000);
   }
+
+  function _renderComparisonAllResults() {
+    var completed = _comparisonBidQueue.filter(function (e) { return e.status === 'done' && e.rows && e.rows.length; });
+    if (!completed.length) {
+      $('comparison-results').innerHTML = '<div class="card"><div class="card-body"><div class="empty-state">Нет данных для сравнения</div></div></div>';
+      return;
+    }
+    // If only one bid, render directly
+    if (completed.length === 1) {
+      selectedBidId = completed[0].bid_id;
+      renderComparison(completed[0].rows);
+      return;
+    }
+    // Multiple bids — tabs + content
+    var html = '<div class="comp-suppliers-bar" style="margin-bottom:12px"><div class="comp-suppliers-label">Результаты по поставщикам:</div><div class="comp-suppliers-list">';
+    for (var t = 0; t < completed.length; t++) {
+      var active = t === 0 ? ' active' : '';
+      html += '<div class="comp-supplier-tab' + active + '" data-comp-tab="' + t + '" onclick="window._switchCompTab(' + t + ')">';
+      html += '<div><div class="comp-supplier-tab-name">' + escapeHtml(completed[t].name) + '</div>';
+      html += '<div class="comp-supplier-tab-meta">' + completed[t].rows.length + ' лотов</div></div></div>';
+    }
+    html += '</div></div>';
+    for (var c = 0; c < completed.length; c++) {
+      html += '<div class="comp-tab-content' + (c === 0 ? ' active' : '') + '" data-comp-pane="' + c + '">';
+      html += _renderComparisonRows(completed[c].rows);
+      html += '</div>';
+    }
+    $('comparison-results').innerHTML = html;
+    selectedBidId = completed[0].bid_id;
+  }
+
+  window._switchCompTab = function (idx) {
+    var tabs = document.querySelectorAll('.comp-supplier-tab[data-comp-tab]');
+    var panes = document.querySelectorAll('.comp-tab-content[data-comp-pane]');
+    for (var t = 0; t < tabs.length; t++) tabs[t].classList.toggle('active', t === idx);
+    for (var p = 0; p < panes.length; p++) panes[p].classList.toggle('active', p === idx);
+  };
 
   function renderComparison(rows) {
     if (!rows.length) {
       $('comparison-results').innerHTML = '<div class="card"><div class="card-body"><div class="empty-state">Нет данных для сравнения</div></div></div>';
       return;
     }
+    $('comparison-results').innerHTML = _renderComparisonRows(rows);
+  }
 
+  function _renderComparisonRows(rows) {
     var html = '';
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
@@ -1509,7 +1560,7 @@
 
       html += '</div></div>';
     }
-    $('comparison-results').innerHTML = html;
+    return html;
   }
 
   // ── Comparison Diagnostics ──────────────────────────────────────────

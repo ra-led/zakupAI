@@ -751,6 +751,9 @@ body {
 .regime-group-content { display: none; }
 .regime-group-content.active { display: block; }
 
+.comp-tab-content { display: none; }
+.comp-tab-content.active { display: block; }
+
 /* GISP comparison details */
 .gisp-toggle {
   background: var(--accent-light);

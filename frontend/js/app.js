@@ -1419,37 +1419,47 @@
     if (_comparisonTimerInterval) { clearInterval(_comparisonTimerInterval); _comparisonTimerInterval = null; }
   }
 
+  var _comparisonPollActive = false;
+
   async function pollComparisonAll() {
+    if (_comparisonPollActive) return; // prevent concurrent polls
     if (!currentPurchase || !_comparisonBidQueue.length) return;
+    _comparisonPollActive = true;
     var allDone = true;
-    for (var i = 0; i < _comparisonBidQueue.length; i++) {
-      var entry = _comparisonBidQueue[i];
-      if (entry.status === 'done' || entry.status === 'failed') continue;
-      try {
-        var result = await API.apiFetch('/purchases/' + currentPurchase.id + '/bids/' + entry.bid_id + '/comparison');
-        if (result.status === 'queued') {
-          entry.status = 'queued';
-          allDone = false;
-        } else if (result.status === 'in_progress') {
-          if (entry.status !== 'in_progress') { entry.startTime = Date.now(); entry.expanded = true; }
-          entry.status = 'in_progress';
-          if (result.stages && result.stages.length) entry.stages = result.stages;
-          allDone = false;
-        } else if (result.status === 'done' || result.status === 'completed') {
-          if (!entry.startTime) entry.startTime = Date.now();
-          entry.status = 'done';
-          entry.elapsed = Date.now() - entry.startTime;
-          entry.expanded = false;
-          if (result.stages && result.stages.length) entry.stages = result.stages;
-          entry.rows = result.rows || [];
-        } else {
+    try {
+      for (var i = 0; i < _comparisonBidQueue.length; i++) {
+        var entry = _comparisonBidQueue[i];
+        if (entry.status === 'done' || entry.status === 'failed') continue;
+        try {
+          var result = await API.apiFetch('/purchases/' + currentPurchase.id + '/bids/' + entry.bid_id + '/comparison');
+          console.log('[M3 poll] bid=' + entry.bid_id + ' status=' + result.status);
+          if (result.status === 'queued') {
+            entry.status = 'queued';
+            allDone = false;
+          } else if (result.status === 'in_progress') {
+            if (entry.status !== 'in_progress') { entry.startTime = Date.now(); entry.expanded = true; }
+            entry.status = 'in_progress';
+            if (result.stages && result.stages.length) entry.stages = result.stages;
+            allDone = false;
+          } else if (result.status === 'done' || result.status === 'completed') {
+            if (!entry.startTime) entry.startTime = Date.now();
+            entry.status = 'done';
+            entry.elapsed = Date.now() - entry.startTime;
+            entry.expanded = false;
+            if (result.stages && result.stages.length) entry.stages = result.stages;
+            entry.rows = result.rows || [];
+          } else {
+            entry.status = 'failed';
+            entry.note = result.note || result.status;
+          }
+        } catch (e) {
+          console.error('[M3 poll] bid=' + entry.bid_id + ' error:', e);
           entry.status = 'failed';
-          entry.note = result.note || result.status;
+          entry.note = e.message;
         }
-      } catch (e) {
-        entry.status = 'failed';
-        entry.note = e.message;
       }
+    } finally {
+      _comparisonPollActive = false;
     }
     _renderComparisonAllProgress();
     if (allDone) {
@@ -1458,7 +1468,7 @@
       setTimeout(function () { $('comparison-progress').innerHTML = ''; }, 3000);
       _renderComparisonAllResults();
     } else {
-      comparisonPollingTimer = setTimeout(pollComparisonAll, 1000);
+      comparisonPollingTimer = setTimeout(pollComparisonAll, 1500);
     }
   }
 

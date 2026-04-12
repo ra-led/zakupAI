@@ -1585,7 +1585,7 @@
 
     for (var c = 0; c < completed.length; c++) {
       html += '<div class="comp-tab-content' + (c === 0 ? ' active' : '') + '" data-comp-pane="' + c + '">';
-      html += _renderComparisonRows(completed[c].rows);
+      html += _renderComparisonRows(completed[c].rows, completed[c].name);
       html += '</div>';
     }
     $('comparison-results').innerHTML = html;
@@ -1604,29 +1604,86 @@
       $('comparison-results').innerHTML = '<div class="card"><div class="card-body"><div class="empty-state">Нет данных для сравнения</div></div></div>';
       return;
     }
-    $('comparison-results').innerHTML = _renderComparisonRows(rows);
+    $('comparison-results').innerHTML = _renderComparisonRows(rows, null);
   }
 
-  function _renderComparisonRows(rows) {
+  function _splitParamText(text) {
+    // Split "Вес: 1.9 кг" → {name: "Вес", value: "1.9 кг"}
+    // or "Вес = 1.9 кг" or "Вес - 1.9 кг"
+    if (!text) return {name: '', value: ''};
+    var m = text.match(/^([^:=–—-]+?)\s*[:=–—-]\s*(.+)$/);
+    if (m) return {name: m[1].trim(), value: m[2].trim()};
+    return {name: text, value: ''};
+  }
+
+  function _renderComparisonRows(rows, supplierName) {
+    var totalLots = rows.length;
+    var warnLots = 0, warnRows = [];
+    for (var li = 0; li < rows.length; li++) {
+      var crs = rows[li].characteristic_rows || [];
+      if (crs.some(function (c) { return c.status !== 'matched'; })) { warnLots++; warnRows.push(rows[li]); }
+    }
+    var summaryClass = warnLots === 0 ? 'status-active' : 'status-warning';
+    var summaryText = warnLots === 0 ? 'Все лоты совпадают' : warnLots + ' из ' + totalLots + ' лотов с расхождениями';
+    var uid = 'cst-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
+
+    var html = '<div class="card"><div class="card-header"><h3>Результаты сравнения</h3>';
+    html += '<span class="status ' + summaryClass + '"><span class="status-dot"></span> ' + summaryText + '</span></div>';
+    html += '<div class="card-body" style="padding:0">';
+
+    // Sub-tabs: Расхождения / Все лоты
+    html += '<div class="comp-subtabs">';
+    html += '<div class="comp-subtab' + (warnLots > 0 ? ' active' : '') + '" data-cst="' + uid + '" data-cst-target="warn" onclick="window._switchCst(this)">';
+    html += '<span class="comp-subtab-dot comp-subtab-dot--warn"></span> Расхождения ';
+    html += '<span class="comp-subtab-count">' + warnLots + '</span></div>';
+    html += '<div class="comp-subtab' + (warnLots === 0 ? ' active' : '') + '" data-cst="' + uid + '" data-cst-target="all" onclick="window._switchCst(this)">';
+    html += 'Все лоты <span class="comp-subtab-count comp-subtab-count--muted">' + totalLots + '</span></div>';
+    html += '</div>';
+
+    // Pane: Расхождения
+    html += '<div class="comp-subtab-pane' + (warnLots > 0 ? ' active' : '') + '" data-cst-group="' + uid + '" data-cst-id="warn">';
+    if (warnRows.length) {
+      html += _renderCompLots(warnRows, supplierName);
+    } else {
+      html += '<div style="padding:24px;text-align:center;color:var(--success);font-weight:500">Расхождений нет</div>';
+    }
+    html += '</div>';
+
+    // Pane: Все лоты
+    html += '<div class="comp-subtab-pane' + (warnLots === 0 ? ' active' : '') + '" data-cst-group="' + uid + '" data-cst-id="all">';
+    html += _renderCompLots(rows, supplierName);
+    html += '</div>';
+
+    html += '</div></div>';
+    return html;
+  }
+
+  window._switchCst = function (el) {
+    var uid = el.getAttribute('data-cst');
+    var target = el.getAttribute('data-cst-target');
+    var tabs = document.querySelectorAll('.comp-subtab[data-cst="' + uid + '"]');
+    var panes = document.querySelectorAll('.comp-subtab-pane[data-cst-group="' + uid + '"]');
+    for (var t = 0; t < tabs.length; t++) tabs[t].classList.toggle('active', tabs[t].getAttribute('data-cst-target') === target);
+    for (var p = 0; p < panes.length; p++) panes[p].classList.toggle('active', panes[p].getAttribute('data-cst-id') === target);
+  };
+
+  function _renderCompLots(rows, supplierName) {
     var html = '';
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
       var totalChars = row.characteristic_rows ? row.characteristic_rows.length : 0;
-      var matchedChars = 0;
-      var unmatchedChars = 0;
-
+      var matchedChars = 0, unmatchedChars = 0;
       if (row.characteristic_rows) {
         for (var m = 0; m < row.characteristic_rows.length; m++) {
           if (row.characteristic_rows[m].status === 'matched') matchedChars++;
           else unmatchedChars++;
         }
       }
-
       var lotIndicator = unmatchedChars > 0 ? 'comp-lot-indicator--warn' : 'comp-lot-indicator--ok';
       var lotBadgeClass = unmatchedChars > 0 ? 'comp-lot-badge--warn' : 'comp-lot-badge--ok';
       var lotBadgeText = unmatchedChars > 0 ? unmatchedChars + ' расхождени' + (unmatchedChars === 1 ? 'е' : unmatchedChars < 5 ? 'я' : 'й') : 'Всё совпадает';
 
-      html += '<div class="card section-gap"><div class="comp-lot" data-expanded="false">' +
+      html += '<div class="comp-lot" data-expanded="false">' +
         '<div class="comp-lot-header" onclick="this.parentElement.dataset.expanded = this.parentElement.dataset.expanded === \'true\' ? \'false\' : \'true\'; var body = this.nextElementSibling; body.style.display = this.parentElement.dataset.expanded === \'true\' ? \'block\' : \'none\'; this.querySelector(\'.comp-lot-arrow\').style.transform = this.parentElement.dataset.expanded === \'true\' ? \'\' : \'rotate(-90deg)\'">' +
         '<div class="comp-lot-header-left">' +
         '<span class="comp-lot-arrow" style="transform:rotate(-90deg)">&#9660;</span>' +
@@ -1639,21 +1696,25 @@
         '</div></div>';
 
       if (row.characteristic_rows && row.characteristic_rows.length) {
+        var kpHeader = supplierName ? escapeHtml(supplierName) : 'Предложение КП';
         html += '<div class="comp-lot-body" style="display:none"><table class="comparison-table">' +
-          '<thead><tr><th>Требование ТЗ</th><th>Предложение КП</th></tr></thead><tbody>';
+          '<thead><tr><th>Характеристика</th><th>Требование ТЗ</th><th>' + kpHeader + '</th></tr></thead><tbody>';
         for (var j = 0; j < row.characteristic_rows.length; j++) {
           var cr = row.characteristic_rows[j];
           var statusClass = cr.status === 'matched' ? 'match' : cr.status === 'unmatched_tz' ? 'mismatch' : 'partial';
           var statusIcon = cr.status === 'matched' ? '&#10003;' : cr.status === 'unmatched_tz' ? '&#10007;' : '&#9888;';
-          html += '<tr>' +
-            '<td>' + escapeHtml(cr.left_text || '') + '</td>' +
-            '<td class="' + statusClass + '"><span class="check-icon">' + statusIcon + '</span> ' + escapeHtml(cr.right_text || '—') + '</td>' +
-            '</tr>';
+          var lp = _splitParamText(cr.left_text);
+          var rp = _splitParamText(cr.right_text);
+          var paramName = lp.name || rp.name || '';
+          var tzVal = lp.value || lp.name || '';
+          var kpVal = cr.right_text ? (rp.value || rp.name || '') : '—';
+          if (!lp.value && lp.name) { paramName = ''; tzVal = lp.name; }
+          html += '<tr><td>' + escapeHtml(paramName) + '</td><td>' + escapeHtml(tzVal) + '</td>' +
+            '<td class="' + statusClass + '"><span class="check-icon">' + statusIcon + '</span> ' + escapeHtml(kpVal) + '</td></tr>';
         }
         html += '</tbody></table></div>';
       }
-
-      html += '</div></div>';
+      html += '</div>';
     }
     return html;
   }

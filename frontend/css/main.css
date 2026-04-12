@@ -756,6 +756,39 @@ body {
 .comp-tab-content { display: none; }
 .comp-tab-content.active { display: block; }
 
+/* Comparison sub-tabs (Расхождения / Все лоты) */
+.comp-subtabs {
+  display: flex;
+  background: var(--bg);
+  padding: 5px;
+  margin: 16px 20px 0 20px;
+  border-radius: 8px;
+  gap: 4px;
+}
+.comp-subtab {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+.comp-subtab:hover { color: var(--text); background: var(--border); }
+.comp-subtab.active { color: var(--text); background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.comp-subtab-dot { width: 7px; height: 7px; border-radius: 50%; }
+.comp-subtab-dot--warn { background: var(--warning); }
+.comp-subtab-count { background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+.comp-subtab-count--muted { background: var(--border); color: var(--text-secondary); }
+.comp-subtab-pane { display: none; }
+.comp-subtab-pane.active { display: block; }
+
+/* Dark first column header in comparison table */
+.comparison-table thead th:first-child { background: var(--dark); color: #fff; }
+
 /* GISP comparison details */
 .gisp-toggle {
   background: var(--accent-light);

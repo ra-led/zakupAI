@@ -1471,43 +1471,6 @@
     if (btnCheck) btnCheck.addEventListener('click', startRegimeCheck);
     if (btnRefresh) btnRefresh.addEventListener('click', loadRegimeCheck);
     initRegimeDiag();
-
-    // ── Standalone KP upload on Regime tab ──
-    $('regime-kp-zone').addEventListener('click', function () {
-      $('inp-regime-kp-file').click();
-    });
-
-    $('inp-regime-kp-file').addEventListener('change', async function () {
-      var file = this.files[0];
-      if (!file) return;
-      if (!currentPurchase) {
-        showError('Сначала выберите или создайте закупку');
-        this.value = '';
-        return;
-      }
-      try {
-        showMessage('Конвертация КП...');
-        var converted = await API.convertTechTaskFile(file);
-        if (converted && converted.markdown) {
-          var supplierName = file.name.replace(/\.[^.]+$/, '');
-          await API.apiFetch('/purchases/' + currentPurchase.id + '/bids', {
-            method: 'POST',
-            body: {
-              bid_text: converted.markdown,
-              supplier_name: supplierName,
-            },
-          });
-          trackFile(currentPurchase.id, file.name, 'regime_kp');
-          showMessage('КП загружено — можно запускать проверку');
-          var hint = $('regime-kp-hint');
-          if (hint) hint.textContent = 'Загружено: ' + file.name;
-          loadBids();
-        }
-      } catch (e) {
-        showError('Ошибка загрузки КП: ' + e.message);
-      }
-      this.value = '';
-    });
   }
 
   var regimeStartTime = null;
@@ -1542,8 +1505,96 @@
       .catch(function (err) { showError(err.message); });
   }
 
+  function renderRegimeBids() {
+    var container = $('regime-bids-list');
+    if (!container) return;
+    if (!currentBids || currentBids.length === 0) {
+      container.innerHTML =
+        '<div class="upload-zone" id="regime-kp-zone">' +
+        '<div class="icon">&#128196;</div>' +
+        '<div class="label">Загрузить КП для проверки</div>' +
+        '<div class="hint" id="regime-kp-hint">pdf, xlsx, doc, docx</div>' +
+        '<input type="file" id="inp-regime-kp-file" accept=".pdf,.xlsx,.doc,.docx" style="display:none">' +
+        '</div>';
+      _bindRegimeUpload();
+      return;
+    }
+    var html = '<div style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary)">КП для проверки (' + currentBids.length + '):</div>';
+    html += '<div class="proposals-grid">';
+    var totalLots = 0;
+    for (var i = 0; i < currentBids.length; i++) {
+      var bid = currentBids[i];
+      var lotCount = bid.lots ? bid.lots.length : 0;
+      totalLots += lotCount;
+      var lotLabel = lotCount + ' позици' + (lotCount === 1 ? 'я' : lotCount < 5 ? 'и' : 'й');
+      var statusIcon = lotCount > 0
+        ? '<span style="color:var(--success)">&#10003;</span>'
+        : '<span style="color:var(--danger)">&#10007;</span>';
+      html += '<div class="proposal-card" style="cursor:default">' +
+        '<div class="proposal-supplier">' + statusIcon + ' ' + escapeHtml(bid.supplier_name || 'Поставщик') + '</div>' +
+        '<div class="proposal-date">' + formatDate(bid.created_at) + '</div>' +
+        '<div class="proposal-items">' + lotLabel + '</div>' +
+        '</div>';
+    }
+    // Upload zone card
+    html += '<div class="proposal-add" id="regime-kp-upload-card"><div class="plus">+</div><div>Загрузить КП</div><div style="font-size:11px">pdf, xlsx, doc, docx</div>' +
+      '<input type="file" id="inp-regime-kp-file" accept=".pdf,.xlsx,.doc,.docx" style="display:none">' +
+      '</div>';
+    html += '</div>';
+    if (totalLots > 0) {
+      html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">Всего ' + totalLots + ' товар' + (totalLots === 1 ? '' : totalLots < 5 ? 'а' : 'ов') + ' будет проверено</div>';
+    } else {
+      html += '<div style="font-size:12px;color:var(--danger);margin-top:4px">Нет распознанных позиций. Сначала запустите распознавание в «Письма и КП».</div>';
+    }
+    container.innerHTML = html;
+    _bindRegimeUpload();
+  }
+
+  function _bindRegimeUpload() {
+    var zone = $('regime-kp-zone') || $('regime-kp-upload-card');
+    var input = $('inp-regime-kp-file');
+    if (zone && input) {
+      zone.addEventListener('click', function () { input.click(); });
+      // Remove first to avoid duplicates on re-render
+      input.removeEventListener('change', _handleRegimeKpUpload);
+      input.addEventListener('change', _handleRegimeKpUpload);
+    }
+  }
+
+  async function _handleRegimeKpUpload() {
+    var file = this.files[0];
+    if (!file) return;
+    if (!currentPurchase) {
+      showError('Сначала выберите или создайте закупку');
+      this.value = '';
+      return;
+    }
+    try {
+      showMessage('Конвертация КП...');
+      var converted = await API.convertTechTaskFile(file);
+      if (converted && converted.markdown) {
+        var supplierName = file.name.replace(/\.[^.]+$/, '');
+        await API.apiFetch('/purchases/' + currentPurchase.id + '/bids', {
+          method: 'POST',
+          body: {
+            bid_text: converted.markdown,
+            supplier_name: supplierName,
+          },
+        });
+        trackFile(currentPurchase.id, file.name, 'regime_kp');
+        showMessage('КП загружено');
+        await loadBids();
+        renderRegimeBids();
+      }
+    } catch (e) {
+      showError('Ошибка загрузки КП: ' + e.message);
+    }
+    this.value = '';
+  }
+
   function loadRegimeCheck() {
     if (!currentPurchase) return;
+    renderRegimeBids();
     API.apiFetch('/regime/purchases/' + currentPurchase.id + '/check')
       .then(function (data) {
         if (!data || !data.id) {

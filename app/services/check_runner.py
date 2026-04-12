@@ -172,6 +172,8 @@ async def _process_items_into_check(
 
             check_item = RegimeCheckItem(
                 check_id=check_id,
+                source_bid_id=raw_item.get("_bid_id"),
+                source_supplier=raw_item.get("_supplier_name"),
                 product_name=raw_item.get("name"),
                 registry_number=raw_item.get("registry_number"),
                 okpd2_code=raw_item.get("okpd2_code"),

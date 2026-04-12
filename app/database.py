@@ -19,6 +19,7 @@ def create_db_and_tables() -> None:
     _ensure_purchase_columns()
     _ensure_llmtask_columns()
     _ensure_bidlot_columns()
+    _ensure_regimecheckitem_columns()
 
 
 def _ensure_supplier_contact_columns() -> None:
@@ -96,6 +97,20 @@ def _ensure_bidlot_columns() -> None:
             if column_name in existing_columns:
                 continue
             conn.execute(text(f"ALTER TABLE bidlot ADD COLUMN {column_name} {column_type}"))
+
+
+def _ensure_regimecheckitem_columns() -> None:
+    expected_columns = {
+        "source_bid_id": "INTEGER",
+        "source_supplier": "VARCHAR",
+    }
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        existing_columns = {column["name"] for column in inspector.get_columns("regimecheckitem")}
+        for column_name, column_type in expected_columns.items():
+            if column_name in existing_columns:
+                continue
+            conn.execute(text(f"ALTER TABLE regimecheckitem ADD COLUMN {column_name} {column_type}"))
 
 
 def get_session() -> Iterator[Session]:

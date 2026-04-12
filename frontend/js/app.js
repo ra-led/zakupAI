@@ -1798,9 +1798,67 @@
       $('regime-results').innerHTML = '<div class="empty-state">Нет результатов проверки</div>';
       return;
     }
-    var html = '';
+
+    // Group items by source supplier
+    var groups = {};
+    var groupOrder = [];
     for (var i = 0; i < data.items.length; i++) {
       var item = data.items[i];
+      var key = item.source_supplier || item.source_bid_id || 'all';
+      if (!groups[key]) {
+        groups[key] = { label: item.source_supplier || 'Все товары', items: [], ok: 0, warn: 0, err: 0, nf: 0 };
+        groupOrder.push(key);
+      }
+      groups[key].items.push(item);
+      if (item.overall_status === 'ok') groups[key].ok++;
+      else if (item.overall_status === 'warning') groups[key].warn++;
+      else if (item.overall_status === 'error') groups[key].err++;
+      else groups[key].nf++;
+    }
+
+    var html = '';
+    var hasMultiple = groupOrder.length > 1;
+
+    // Supplier tabs (only if multiple suppliers)
+    if (hasMultiple) {
+      html += '<div class="comp-suppliers-bar"><div class="comp-suppliers-label">Результаты по КП:</div><div class="comp-suppliers-list">';
+      for (var gi = 0; gi < groupOrder.length; gi++) {
+        var g = groups[groupOrder[gi]];
+        var indicatorCls = g.err > 0 ? 'comp-supplier-indicator--warn' : g.nf > 0 ? 'comp-supplier-indicator--pending' : 'comp-supplier-indicator--ok';
+        var meta = g.items.length + ' поз.';
+        if (g.err > 0) meta += ', ' + g.err + ' несоотв.';
+        else if (g.ok === g.items.length) meta += ', все ОК';
+        html += '<div class="comp-supplier-tab' + (gi === 0 ? ' active' : '') + '" data-regime-group="' + gi + '" onclick="window._switchRegimeTab(' + gi + ')">';
+        html += '<span class="comp-supplier-indicator ' + indicatorCls + '"></span>';
+        html += '<div><div class="comp-supplier-tab-name">' + escapeHtml(g.label) + '</div>';
+        html += '<div class="comp-supplier-tab-meta">' + meta + '</div></div></div>';
+      }
+      html += '</div></div>';
+    }
+
+    // Content panes per supplier
+    for (var gi2 = 0; gi2 < groupOrder.length; gi2++) {
+      var grp = groups[groupOrder[gi2]];
+      html += '<div class="regime-group-content' + (gi2 === 0 ? ' active' : '') + '" id="regime-group-' + gi2 + '">';
+      html += _renderRegimeItemCards(grp.items);
+      html += '</div>';
+    }
+
+    $('regime-results').innerHTML = html;
+
+    // Tab switching
+    window._switchRegimeTab = function (idx) {
+      var tabs = document.querySelectorAll('.comp-supplier-tab[data-regime-group]');
+      var panes = document.querySelectorAll('.regime-group-content');
+      for (var t = 0; t < tabs.length; t++) tabs[t].classList.toggle('active', t === idx);
+      for (var p = 0; p < panes.length; p++) panes[p].classList.toggle('active', p === idx);
+    };
+  }
+
+  function _renderRegimeItemCards(items) {
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
       var statusClass = 'status-draft';
       var statusLabel = 'Проверяется';
       if (item.overall_status === 'ok') { statusClass = 'status-active'; statusLabel = 'Соответствует'; }
@@ -1831,7 +1889,7 @@
 
       html += '</div></div>';
     }
-    $('regime-results').innerHTML = html;
+    return html;
   }
 
   function renderRegimeCheckCell(label, status, actual, certEnd, url) {

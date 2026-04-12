@@ -32,6 +32,8 @@ router = APIRouter(prefix="/regime", tags=["regime"])
 class RegimeCheckItemOut(BaseModel):
     id: int
     check_id: int
+    source_bid_id: Optional[int] = None
+    source_supplier: Optional[str] = None
     product_name: Optional[str] = None
     registry_number: Optional[str] = None
     okpd2_code: Optional[str] = None
@@ -140,6 +142,9 @@ def start_regime_check(
         if items:
             label = bid.supplier_name or f"КП #{bid.id}"
             bid_names.append(f"{label} ({len(items)} поз.)")
+            for item in items:
+                item["_bid_id"] = bid.id
+                item["_supplier_name"] = label
             all_items.extend(items)
 
     if not all_items:

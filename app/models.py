@@ -200,6 +200,8 @@ class RegimeCheckItem(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     check_id: int = Field(foreign_key="regimecheck.id")
+    source_bid_id: Optional[int] = None
+    source_supplier: Optional[str] = None
     product_name: Optional[str] = None
     registry_number: Optional[str] = None
     okpd2_code: Optional[str] = None

@@ -323,6 +323,8 @@ class BidLotRead(BaseModel):
     id: int
     name: str
     price: Optional[str]
+    registry_number: Optional[str] = None
+    okpd2_code: Optional[str] = None
     parameters: List[BidLotParameterRead] = Field(default_factory=list)
 
 

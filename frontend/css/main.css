@@ -751,6 +751,69 @@ body {
 .regime-group-content { display: none; }
 .regime-group-content.active { display: block; }
 
+/* GISP comparison details */
+.gisp-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--accent);
+  padding: 0 4px;
+  line-height: 1;
+}
+.gisp-toggle:hover { color: var(--text); }
+
+.gisp-details {
+  display: none;
+  margin-top: 8px;
+  overflow-x: auto;
+}
+.gisp-details.open { display: block; }
+
+.gisp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.gisp-table th {
+  text-align: left;
+  padding: 6px 8px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+.gisp-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.gisp-row-ok td:first-child { border-left: 3px solid var(--success); }
+.gisp-row-mismatch td:first-child { border-left: 3px solid var(--danger); }
+.gisp-row-wording td:first-child { border-left: 3px solid var(--warning); }
+.gisp-row-missing td:first-child { border-left: 3px solid #9ca3af; }
+
+.gisp-status-cell { white-space: nowrap; }
+.gisp-row-ok .gisp-status-cell { color: var(--success); }
+.gisp-row-mismatch .gisp-status-cell { color: var(--danger); }
+.gisp-row-wording .gisp-status-cell { color: var(--warning); }
+.gisp-row-missing .gisp-status-cell { color: #9ca3af; }
+
+.gisp-comment {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+  white-space: normal;
+  margin-top: 2px;
+}
+
+/* When GISP details are open, span full width of the grid */
+.regime-check:has(.gisp-details.open) {
+  grid-column: 1 / -1;
+}
+
 /* ===== CHAT / CORRESPONDENCE ===== */
 .chat-thread {
   max-height: 400px;

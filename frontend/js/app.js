@@ -1940,8 +1940,8 @@
       }
       html += renderRegimeCheckCellSimple('Баллы локализации', item.localization_status, locDetail);
 
-      // GISP
-      html += renderRegimeCheckCellSimple('Каталог ГИСП', item.gisp_status, item.gisp_url ? '<a href="' + escapeHtml(item.gisp_url) + '" target="_blank">Открыть</a>' : '');
+      // GISP — expandable comparison table
+      html += renderGispCheckCell(item, item.id || i);
 
       html += '</div></div>';
     }
@@ -1968,6 +1968,73 @@
     else if (status === 'not_found' || status === 'okpd_not_found' || status === 'score_missing') { cls = 'regime-check regime-unknown'; icon = '—'; }
     return '<div class="' + cls + '"><div class="regime-check-label">' + icon + ' ' + escapeHtml(label) + '</div><div class="regime-check-value">' + (detail || '') + '</div></div>';
   }
+
+  function renderGispCheckCell(item, idx) {
+    var status = item.gisp_status;
+    var cls = 'regime-check regime-unknown';
+    var icon = '—';
+    if (status === 'ok') { cls = 'regime-check regime-pass'; icon = '✓'; }
+    else if (status === 'mismatch' || status === 'error') { cls = 'regime-check regime-fail'; icon = '✗'; }
+    else if (status === 'warning' || status === 'wording') { cls = 'regime-check regime-unknown'; icon = '⚠'; }
+
+    var comparison = null;
+    if (item.gisp_comparison) {
+      try { comparison = typeof item.gisp_comparison === 'string' ? JSON.parse(item.gisp_comparison) : item.gisp_comparison; } catch (e) { comparison = null; }
+    }
+
+    var html = '<div class="' + cls + '">';
+    html += '<div class="regime-check-label">' + icon + ' Каталог ГИСП';
+    if (comparison && comparison.length) {
+      html += ' <button class="gisp-toggle" onclick="window._toggleGisp(' + idx + ')" title="Показать детали">▸</button>';
+    }
+    html += '</div>';
+    html += '<div class="regime-check-value">';
+    if (status === 'ok') html += 'Характеристики совпадают';
+    else if (status === 'mismatch') html += 'Несоответствие характеристик';
+    else if (status === 'warning') html += 'Требует внимания';
+    else if (status === 'skipped') html += 'Нет характеристик для сравнения';
+    else if (status === 'not_found') html += 'Не найден в реестре';
+    else if (status === 'gisp_unavailable') html += 'ГИСП недоступен';
+    if (item.gisp_url) html += ' <a href="' + escapeHtml(item.gisp_url) + '" target="_blank" style="margin-left:6px">Карточка ГИСП</a>';
+    html += '</div>';
+
+    if (comparison && comparison.length) {
+      html += '<div class="gisp-details" id="gisp-details-' + idx + '">';
+      html += '<table class="gisp-table"><thead><tr>';
+      html += '<th>Характеристика</th><th>Поставщик</th><th>ГИСП</th><th>Результат</th>';
+      html += '</tr></thead><tbody>';
+      for (var c = 0; c < comparison.length; c++) {
+        var row = comparison[c];
+        var rowCls = '';
+        var statusLabel = '';
+        if (row.status === 'ok') { rowCls = 'gisp-row-ok'; statusLabel = '✓ Совпадает'; }
+        else if (row.status === 'mismatch') { rowCls = 'gisp-row-mismatch'; statusLabel = '✗ Не совпадает'; }
+        else if (row.status === 'wording') { rowCls = 'gisp-row-wording'; statusLabel = '⚠ Отличие формулировки'; }
+        else if (row.status === 'missing_in_gisp') { rowCls = 'gisp-row-missing'; statusLabel = '— Нет в ГИСП'; }
+        else { statusLabel = row.status || '—'; }
+
+        html += '<tr class="' + rowCls + '">';
+        html += '<td>' + escapeHtml(row.name || '') + '</td>';
+        html += '<td>' + escapeHtml(row.supplier_value || '—') + '</td>';
+        html += '<td>' + escapeHtml(row.gisp_value != null ? row.gisp_value : '—') + '</td>';
+        html += '<td class="gisp-status-cell">' + statusLabel;
+        if (row.comment) html += '<div class="gisp-comment">' + escapeHtml(row.comment) + '</div>';
+        html += '</td></tr>';
+      }
+      html += '</tbody></table></div>';
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  window._toggleGisp = function (idx) {
+    var el = document.getElementById('gisp-details-' + idx);
+    if (!el) return;
+    var open = el.classList.toggle('open');
+    var btn = el.parentElement.querySelector('.gisp-toggle');
+    if (btn) btn.textContent = open ? '▾' : '▸';
+  };
 
   // ── Regime Diagnostics ─────────────────────────────────────────────
 

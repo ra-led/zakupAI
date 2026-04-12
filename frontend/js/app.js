@@ -1298,10 +1298,9 @@
         _comparisonStartTime = Date.now();
         _comparisonBidQueue = currentBids.map(function (b, idx) {
           var stages = stageNames.map(function (name) { return {name: name, status: 'pending', detail: ''}; });
-          if (idx === 0) stages[0].status = 'in_progress';
           return { bid_id: b.id, name: b.supplier_name || 'Поставщик',
-                   status: idx === 0 ? 'in_progress' : 'queued', stages: stages,
-                   startTime: idx === 0 ? Date.now() : null, elapsed: null };
+                   status: 'queued', stages: stages,
+                   startTime: null, elapsed: null, expanded: false };
         });
         _startComparisonTimer();
         _renderComparisonAllProgress();
@@ -1428,14 +1427,19 @@
       if (entry.status === 'done' || entry.status === 'failed') continue;
       try {
         var result = await API.apiFetch('/purchases/' + currentPurchase.id + '/bids/' + entry.bid_id + '/comparison');
-        if (result.status === 'queued' || result.status === 'in_progress') {
-          if (entry.status === 'queued') entry.startTime = Date.now();
+        if (result.status === 'queued') {
+          entry.status = 'queued';
+          allDone = false;
+        } else if (result.status === 'in_progress') {
+          if (entry.status !== 'in_progress') { entry.startTime = Date.now(); entry.expanded = true; }
           entry.status = 'in_progress';
           if (result.stages && result.stages.length) entry.stages = result.stages;
           allDone = false;
         } else if (result.status === 'done' || result.status === 'completed') {
+          if (!entry.startTime) entry.startTime = Date.now();
           entry.status = 'done';
-          entry.elapsed = entry.startTime ? Date.now() - entry.startTime : null;
+          entry.elapsed = Date.now() - entry.startTime;
+          entry.expanded = false;
           if (result.stages && result.stages.length) entry.stages = result.stages;
           entry.rows = result.rows || [];
         } else {
@@ -1464,6 +1468,15 @@
     var now = Date.now();
     var totalElapsed = _comparisonStartTime ? _fmtElapsed(now - _comparisonStartTime) : '';
 
+    // Read current expanded states from DOM before re-render
+    var domSections = el.querySelectorAll('[data-comp-bid-stages]');
+    for (var ds = 0; ds < domSections.length; ds++) {
+      var bidIdx = parseInt(domSections[ds].getAttribute('data-comp-bid-stages'), 10);
+      if (_comparisonBidQueue[bidIdx]) {
+        _comparisonBidQueue[bidIdx].expanded = domSections[ds].style.display !== 'none';
+      }
+    }
+
     var html = '<div class="card" style="margin-bottom:12px"><div class="card-body">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
     html += '<span style="font-weight:600">Сравнение КП с ТЗ</span>';
@@ -1477,34 +1490,29 @@
       var isQueued = entry.status === 'queued' || entry.status === 'pending';
       var isFailed = entry.status === 'failed';
 
-      // Bid icon
       var bidIcon = '&#9675;';
       if (isDone) bidIcon = '<span style="color:var(--success)">&#10003;</span>';
       else if (isActive) bidIcon = '<div class="spinner" style="width:14px;height:14px;display:inline-block"></div>';
       else if (isFailed) bidIcon = '<span style="color:var(--danger)">&#10007;</span>';
 
-      // Bid timer
       var bidTimer = '';
       if (isDone && entry.elapsed) bidTimer = _fmtElapsed(entry.elapsed);
       else if (isActive && entry.startTime) bidTimer = _fmtElapsed(now - entry.startTime);
 
-      // Collapsible: expand only the active one
-      var expanded = isActive;
+      var expanded = entry.expanded;
       var arrowStyle = 'cursor:pointer;transition:transform .2s;' + (expanded ? '' : 'transform:rotate(-90deg);');
 
       html += '<div style="margin-bottom:6px;border-bottom:1px solid var(--border);padding-bottom:6px">';
-      // Header row (clickable)
-      html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer" onclick="var stages=this.nextElementSibling;if(stages){stages.style.display=stages.style.display===\'none\'?\'block\':\'none\';this.querySelector(\'.comp-prog-arrow\').style.transform=stages.style.display===\'none\'?\'rotate(-90deg)\':\'\'}">';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer" onclick="var s=this.nextElementSibling;if(s){var show=s.style.display===\'none\';s.style.display=show?\'block\':\'none\';this.querySelector(\'.comp-prog-arrow\').style.transform=show?\'\':\' rotate(-90deg)\'}">';
       html += '<span class="comp-prog-arrow" style="font-size:10px;color:var(--text-secondary);' + arrowStyle + '">&#9660;</span>';
       html += '<span style="width:20px;text-align:center">' + bidIcon + '</span>';
-      html += '<span style="font-weight:500;color:' + (isActive ? 'var(--accent)' : isDone ? 'var(--success)' : isFailed ? 'var(--danger)' : 'var(--text-secondary)') + '">' + escapeHtml(entry.name) + '</span>';
+      html += '<span style="font-weight:500;color:' + (isActive ? 'var(--success)' : isDone ? 'var(--text)' : isFailed ? 'var(--danger)' : 'var(--text-secondary)') + '">' + escapeHtml(entry.name) + '</span>';
       if (isQueued) html += '<span style="font-size:12px;color:var(--text-secondary);margin-left:4px">в очереди</span>';
       if (bidTimer) html += '<span style="font-size:12px;color:var(--text-secondary);margin-left:auto;font-variant-numeric:tabular-nums">' + bidTimer + '</span>';
       html += '</div>';
 
-      // Stages (collapsible)
       if (entry.stages && !isQueued) {
-        html += '<div style="' + (expanded ? '' : 'display:none') + '">';
+        html += '<div data-comp-bid-stages="' + b + '" style="' + (expanded ? '' : 'display:none') + '">';
         for (var si = 0; si < entry.stages.length; si++) {
           var s = entry.stages[si];
           var sIcon = '&#9675;', sColor = 'var(--text-secondary)';
@@ -1653,11 +1661,83 @@
     API.apiFetch('/purchases/' + currentPurchase.id + '/comparison/diagnostics')
       .then(function (data) {
         _comparisonDiagData = data;
-        el.textContent = JSON.stringify(data, null, 2);
+        el.textContent = _formatComparisonDiag(data);
       })
       .catch(function (err) {
         el.textContent = 'Ошибка: ' + err.message;
       });
+  }
+
+  function _formatComparisonDiag(d) {
+    var out = '';
+
+    // Summary
+    var taskCount = d.comparison_tasks ? d.comparison_tasks.length : 0;
+    var doneCount = 0, failedCount = 0, queuedCount = 0;
+    if (d.comparison_tasks) {
+      for (var t = 0; t < d.comparison_tasks.length; t++) {
+        if (d.comparison_tasks[t].status === 'completed') doneCount++;
+        else if (d.comparison_tasks[t].status === 'failed') failedCount++;
+        else queuedCount++;
+      }
+    }
+    out += '╔══════════════════════════════════════════╗\n';
+    out += '║           СВОДКА М3 СРАВНЕНИЕ            ║\n';
+    out += '╠══════════════════════════════════════════╣\n';
+    out += '║  ТЗ лотов:    ' + (d.tz ? d.tz.lot_count : 0) + '\n';
+    out += '║  КП:          ' + (d.bids ? d.bids.length : 0) + '\n';
+    out += '║  Задач:       ' + taskCount + ' (✓ ' + doneCount + '  ✗ ' + failedCount + '  ◌ ' + queuedCount + ')\n';
+    out += '╚══════════════════════════════════════════╝\n';
+
+    // TZ lots
+    out += '\n=== ТЗ (лоты) ===\n';
+    if (d.tz && d.tz.lots && d.tz.lots.length) {
+      for (var l = 0; l < d.tz.lots.length; l++) {
+        out += '  #' + d.tz.lots[l].id + ' ' + d.tz.lots[l].name + '\n';
+      }
+    } else {
+      out += '  (нет лотов ТЗ)\n';
+    }
+
+    // Bids
+    out += '\n=== КП (Bids) ===\n';
+    if (d.bids && d.bids.length) {
+      for (var i = 0; i < d.bids.length; i++) {
+        var b = d.bids[i];
+        out += '  #' + b.bid_id + ' ' + (b.supplier_name || '(без имени)') + ' → ' + b.lot_count + ' лотов (' + b.created_at + ')\n';
+      }
+    } else {
+      out += '  (нет КП)\n';
+    }
+
+    // Comparison tasks
+    out += '\n=== Задачи сравнения ===\n';
+    if (d.comparison_tasks && d.comparison_tasks.length) {
+      for (var j = 0; j < d.comparison_tasks.length; j++) {
+        var ct = d.comparison_tasks[j];
+        var statusIcon = ct.status === 'completed' ? '✓' : ct.status === 'failed' ? '✗' : ct.status === 'in_progress' ? '⟳' : '◌';
+        out += '\n  --- task #' + ct.task_id + ' [' + statusIcon + ' ' + ct.status + '] bid=#' + ct.bid_id + ' ---\n';
+        out += '  Результат: ' + ct.row_count + ' лотов';
+        if (ct.note) out += ' | ' + ct.note;
+        out += '\n';
+        out += '  Создан: ' + ct.created_at + '\n';
+        if (ct.updated_at && ct.updated_at !== ct.created_at) out += '  Обновлён: ' + ct.updated_at + '\n';
+        if (ct.stages && ct.stages.length) {
+          out += '  Этапы:\n';
+          for (var k = 0; k < ct.stages.length; k++) {
+            var s = ct.stages[k];
+            var icon = s.status === 'done' ? '[OK]' : s.status === 'in_progress' ? '[..]' : '[  ]';
+            out += '    ' + icon + ' ' + s.name + (s.detail ? ' → ' + s.detail : '') + '\n';
+          }
+        }
+      }
+    } else {
+      out += '  (нет задач)\n';
+    }
+
+    out += '\n=== Raw JSON ===\n';
+    out += JSON.stringify(d, null, 2);
+    return out;
   }
 
   // ── National Regime ─────────────────────────────────────────────────

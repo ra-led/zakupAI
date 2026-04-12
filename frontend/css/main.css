@@ -748,6 +748,8 @@ body {
 
 .regime-unknown { background: #f3f4f6; }
 
+.comp-supplier-indicator--fail { background: var(--danger); }
+
 .regime-group-content { display: none; }
 .regime-group-content.active { display: block; }
 

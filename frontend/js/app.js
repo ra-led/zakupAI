@@ -1560,21 +1560,29 @@
       $('comparison-results').innerHTML = '<div class="card"><div class="card-body"><div class="empty-state">Нет данных для сравнения</div></div></div>';
       return;
     }
-    // If only one bid, render directly
-    if (completed.length === 1) {
-      selectedBidId = completed[0].bid_id;
-      renderComparison(completed[0].rows);
-      return;
-    }
-    // Multiple bids — tabs + content
+
+    // Build tabs with summary for each supplier
     var html = '<div class="comp-suppliers-bar" style="margin-bottom:12px"><div class="comp-suppliers-label">Результаты по поставщикам:</div><div class="comp-suppliers-list">';
     for (var t = 0; t < completed.length; t++) {
       var active = t === 0 ? ' active' : '';
+      // Count matched lots
+      var totalLots = completed[t].rows.length;
+      var okLots = 0;
+      for (var rl = 0; rl < completed[t].rows.length; rl++) {
+        var chars = completed[t].rows[rl].characteristic_rows || [];
+        var allMatch = chars.length > 0 && chars.every(function (c) { return c.status === 'matched'; });
+        if (allMatch) okLots++;
+      }
+      var indicatorClass = okLots === totalLots ? 'comp-supplier-indicator--ok' : okLots === 0 ? 'comp-supplier-indicator--fail' : 'comp-supplier-indicator--warn';
+      var metaText = okLots + ' из ' + totalLots + ' соответств.';
+
       html += '<div class="comp-supplier-tab' + active + '" data-comp-tab="' + t + '" onclick="window._switchCompTab(' + t + ')">';
+      html += '<span class="comp-supplier-indicator ' + indicatorClass + '"></span>';
       html += '<div><div class="comp-supplier-tab-name">' + escapeHtml(completed[t].name) + '</div>';
-      html += '<div class="comp-supplier-tab-meta">' + completed[t].rows.length + ' лотов</div></div></div>';
+      html += '<div class="comp-supplier-tab-meta">' + metaText + '</div></div></div>';
     }
     html += '</div></div>';
+
     for (var c = 0; c < completed.length; c++) {
       html += '<div class="comp-tab-content' + (c === 0 ? ' active' : '') + '" data-comp-pane="' + c + '">';
       html += _renderComparisonRows(completed[c].rows);
@@ -1618,10 +1626,10 @@
       var lotBadgeClass = unmatchedChars > 0 ? 'comp-lot-badge--warn' : 'comp-lot-badge--ok';
       var lotBadgeText = unmatchedChars > 0 ? unmatchedChars + ' расхождени' + (unmatchedChars === 1 ? 'е' : unmatchedChars < 5 ? 'я' : 'й') : 'Всё совпадает';
 
-      html += '<div class="card section-gap"><div class="comp-lot" data-expanded="true">' +
+      html += '<div class="card section-gap"><div class="comp-lot" data-expanded="false">' +
         '<div class="comp-lot-header" onclick="this.parentElement.dataset.expanded = this.parentElement.dataset.expanded === \'true\' ? \'false\' : \'true\'; var body = this.nextElementSibling; body.style.display = this.parentElement.dataset.expanded === \'true\' ? \'block\' : \'none\'; this.querySelector(\'.comp-lot-arrow\').style.transform = this.parentElement.dataset.expanded === \'true\' ? \'\' : \'rotate(-90deg)\'">' +
         '<div class="comp-lot-header-left">' +
-        '<span class="comp-lot-arrow">&#9660;</span>' +
+        '<span class="comp-lot-arrow" style="transform:rotate(-90deg)">&#9660;</span>' +
         '<span class="comp-lot-indicator ' + lotIndicator + '"></span>' +
         '<span class="comp-lot-title">' + escapeHtml(row.lot_name) + '</span>' +
         '</div>' +
@@ -1631,14 +1639,13 @@
         '</div></div>';
 
       if (row.characteristic_rows && row.characteristic_rows.length) {
-        html += '<div class="comp-lot-body"><table class="comparison-table">' +
-          '<thead><tr><th>Характеристика</th><th>Требование ТЗ</th><th>Предложение КП</th></tr></thead><tbody>';
+        html += '<div class="comp-lot-body" style="display:none"><table class="comparison-table">' +
+          '<thead><tr><th>Требование ТЗ</th><th>Предложение КП</th></tr></thead><tbody>';
         for (var j = 0; j < row.characteristic_rows.length; j++) {
           var cr = row.characteristic_rows[j];
           var statusClass = cr.status === 'matched' ? 'match' : cr.status === 'unmatched_tz' ? 'mismatch' : 'partial';
           var statusIcon = cr.status === 'matched' ? '&#10003;' : cr.status === 'unmatched_tz' ? '&#10007;' : '&#9888;';
           html += '<tr>' +
-            '<td>' + escapeHtml(cr.left_text || cr.name || '') + '</td>' +
             '<td>' + escapeHtml(cr.left_text || '') + '</td>' +
             '<td class="' + statusClass + '"><span class="check-icon">' + statusIcon + '</span> ' + escapeHtml(cr.right_text || '—') + '</td>' +
             '</tr>';

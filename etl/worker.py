@@ -417,8 +417,10 @@ def _classify_param_match(
         {
             "role": "system",
             "content": (
-                "Ты сопоставляешь характеристику из ТЗ с характеристикой из КП. "
-                "Выбери один id из списка кандидатов или null, если соответствия нет. "
+                "Ты сопоставляешь характеристику из технического задания (ТЗ) с характеристикой из коммерческого предложения (КП). "
+                "Выбери один id из списка кандидатов, который описывает ту же характеристику, или null если соответствия нет. "
+                "Учитывай синонимы: Вес=Масса, ОЗУ=Оперативная память=RAM, Диагональ=Размер экрана, Ёмкость=Объём и т.д. "
+                "Характеристики совпадают если описывают одно и то же свойство, даже если значения различаются. "
                 "Ответ только JSON."
             ),
         },
@@ -500,8 +502,8 @@ def _build_characteristic_rows(
     bid_vectors = vectors[len(lot_params_indexed) :]
 
     bid_by_id = {item["id"]: item for item in bid_params_indexed}
-    matched_pairs: List[Tuple[Dict, Dict]] = []
-    unmatched_lot_params: List[Dict] = []
+    # matched_map: lot_param_id → bid_param
+    matched_map: Dict[int, Dict] = {}
     used_bid_ids: set[int] = set()
 
     for idx, lot_param in enumerate(lot_params_indexed):
@@ -512,40 +514,38 @@ def _build_characteristic_rows(
             similarity = _cosine_similarity(lot_vectors[idx], bid_vectors[bid_idx])
             scored.append((similarity, bid_param["id"]))
         scored.sort(key=lambda item: item[0], reverse=True)
-        top_candidate_ids = [item[1] for item in scored[:3]]
+        # Take top-5 candidates (was 3) to improve recall for large param sets
+        top_candidate_ids = [item[1] for item in scored[:5]]
         top_candidates = [bid_by_id[candidate_id] for candidate_id in top_candidate_ids]
         if not top_candidates:
-            unmatched_lot_params.append(lot_param)
             continue
 
         matched_id, confidence, _ = _classify_param_match(client, lot_param, top_candidates)
         if matched_id is None or confidence < LOT_PARAM_MATCH_MIN_CONFIDENCE or matched_id in used_bid_ids:
-            unmatched_lot_params.append(lot_param)
             continue
 
-        matched_bid_param = bid_by_id[matched_id]
+        matched_map[lot_param["id"]] = bid_by_id[matched_id]
         used_bid_ids.add(matched_id)
-        matched_pairs.append((lot_param, matched_bid_param))
 
     unmatched_bid_params = [param for param in bid_params_indexed if param["id"] not in used_bid_ids]
 
+    # Build rows in TZ parameter order: matched pairs first (preserving TZ order),
+    # then unmatched KP params at the end
     rows: List[Dict] = []
-    rows.extend(
-        {
-            "left_text": _param_to_text(param),
-            "right_text": "",
-            "status": "unmatched_tz",
-        }
-        for param in unmatched_lot_params
-    )
-    rows.extend(
-        {
-            "left_text": _param_to_text(left_param),
-            "right_text": _param_to_text(right_param),
-            "status": "matched",
-        }
-        for left_param, right_param in matched_pairs
-    )
+    for lot_param in lot_params_indexed:
+        bid_param = matched_map.get(lot_param["id"])
+        if bid_param:
+            rows.append({
+                "left_text": _param_to_text(lot_param),
+                "right_text": _param_to_text(bid_param),
+                "status": "matched",
+            })
+        else:
+            rows.append({
+                "left_text": _param_to_text(lot_param),
+                "right_text": "",
+                "status": "unmatched_tz",
+            })
     rows.extend(
         {
             "left_text": "",

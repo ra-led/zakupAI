@@ -72,6 +72,60 @@ jobs:
             docker network ls | grep zakupai || true
 
             echo ""
+            echo "--- check whether curl is available in the scraper image ---"
+            docker compose -f docker-compose.prod.yml exec -T gisp-scraper sh -c 'which curl || echo "no curl in image"'
+
+            echo ""
+            echo "--- urllib POST from backend (known good outbound) ---"
+            docker compose -f docker-compose.prod.yml exec -T backend python -c "
+            import urllib.request, json, time
+            body = json.dumps({'opt': {'filter': ['product_reg_number_2023', 'contains', '10085920']}}).encode()
+            req = urllib.request.Request(
+                'https://gisp.gov.ru/pp719v2/pub/prod/b/',
+                data=body, method='POST',
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Origin': 'https://gisp.gov.ru',
+                    'Referer': 'https://gisp.gov.ru/pp719v2/pub/prod/',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+                },
+            )
+            t = time.monotonic()
+            try:
+                r = urllib.request.urlopen(req, timeout=15)
+                d = json.loads(r.read())
+                print(f'BACKEND POST: ok HTTP {r.status} items={len(d.get(\"items\",[]))} ({time.monotonic()-t:.1f}s)')
+            except Exception as e:
+                print(f'BACKEND POST: FAIL {type(e).__name__}: {e!r} ({time.monotonic()-t:.1f}s)')
+            " 2>&1
+
+            echo ""
+            echo "--- urllib POST from gisp-scraper container ---"
+            docker compose -f docker-compose.prod.yml exec -T gisp-scraper python -c "
+            import urllib.request, json, time
+            body = json.dumps({'opt': {'filter': ['product_reg_number_2023', 'contains', '10085920']}}).encode()
+            req = urllib.request.Request(
+                'https://gisp.gov.ru/pp719v2/pub/prod/b/',
+                data=body, method='POST',
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Origin': 'https://gisp.gov.ru',
+                    'Referer': 'https://gisp.gov.ru/pp719v2/pub/prod/',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+                },
+            )
+            t = time.monotonic()
+            try:
+                r = urllib.request.urlopen(req, timeout=15)
+                d = json.loads(r.read())
+                print(f'SCRAPER POST: ok HTTP {r.status} items={len(d.get(\"items\",[]))} ({time.monotonic()-t:.1f}s)')
+            except Exception as e:
+                print(f'SCRAPER POST: FAIL {type(e).__name__}: {e!r} ({time.monotonic()-t:.1f}s)')
+            " 2>&1
+
+            echo ""
             echo "--- httpx vs urllib direct ---"
             docker compose -f docker-compose.prod.yml exec -T gisp-scraper python -c "
             import urllib.request, json, sys, time

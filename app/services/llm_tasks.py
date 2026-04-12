@@ -19,6 +19,7 @@ of those modules are migrated to import from here instead.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -27,11 +28,13 @@ from typing import Any, Dict, List, Optional
 try:
     from app.lots_extraction_prompting import (
         build_bid_lots_prompt_and_schema,
+        build_kp_prompt_and_schema,
         build_lots_prompt_and_schema,
     )
 except ImportError:  # pragma: no cover — alt import path used by some scripts
     from lots_extraction_prompting import (  # type: ignore[no-redef]
         build_bid_lots_prompt_and_schema,
+        build_kp_prompt_and_schema,
         build_lots_prompt_and_schema,
     )
 
@@ -48,12 +51,15 @@ logger = logging.getLogger(__name__)
 TASK_SEARCH_QUERIES = "search_queries"
 # TZ → lots (M1/M3)
 TASK_LOTS_EXTRACTION = "lots_extraction"
-# КП → bid lots with prices (M2/M3)
-TASK_BID_LOTS_EXTRACTION = "bid_lots_extraction"
+# Unified KP parser. Used by both M2/M3 (extract_bid_lots) and M4
+# (extract_items_from_text). The legacy task names below stay as aliases so
+# operators that pinned a model via LLM_MODEL_BID_LOTS_EXTRACTION or
+# LLM_MODEL_KP_ITEMS_EXTRACTION keep working.
+TASK_KP_EXTRACTION = "kp_extraction"
+TASK_BID_LOTS_EXTRACTION = "bid_lots_extraction"  # alias, kept for backward compat
+TASK_KP_ITEMS_EXTRACTION = "kp_items_extraction"  # alias, kept for backward compat
 # Perplexity post-processing (M1)
 TASK_PERPLEXITY_POSTPROCESS = "perplexity_postprocess"
-# КП items extraction for M4 Нацрежим (loose schema, no price needed)
-TASK_KP_ITEMS_EXTRACTION = "kp_items_extraction"
 # GISP characteristic comparison (M4)
 TASK_COMPARE_CHARACTERISTICS = "compare_characteristics"
 
@@ -260,26 +266,46 @@ def extract_lots(
 
 
 # ---------------------------------------------------------------------------
-# Bid lots extraction from KP (M2/M3) — same as above plus prices
+# Unified KP parser (M2/M3 and M4 share this)
 # ---------------------------------------------------------------------------
+#
+# Before PR-3 there were two separate parsers — extract_bid_lots in
+# llm_openai.py (for M2/M3 BidLot) and extract_items_from_text in
+# llm_client.py (for M4 RegimeCheckItem) — with two different prompts
+# and two different output shapes that drifted apart whenever someone
+# tweaked one without the other. They now share kp_extraction_prompt.j2
+# and KpExtractionResult, with a superset schema: every consumer takes
+# only the fields it needs.
+#
+# Output shape (per lot):
+#   {
+#     "name": str,            # required
+#     "units": str,
+#     "count": str,
+#     "price": str,           # used by M2/M3 — empty string when absent
+#     "registry_number": str, # used by M4 — empty string when absent
+#     "okpd2_code": str,      # used by M4 — empty string when absent
+#     "parameters": [{"name", "value", "units"}, ...],
+#   }
+# All fields are present on every lot (the JSON schema enforces it),
+# missing values are empty strings — never null. Consumers must treat
+# "" as "absent".
 
 
-def _build_bid_lots_prompt(terms_text: str) -> List[Dict[str, str]]:
-    prompt, _ = build_bid_lots_prompt_and_schema(terms_text or "")
-    return [{"role": "user", "content": prompt}]
-
-
-def extract_bid_lots(
+def parse_kp(
     terms_text: str,
     *,
     usage_ctx: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Extract structured bid lots from a supplier КП document."""
-    messages = _build_bid_lots_prompt(terms_text)
+    """Run the unified KP parser. Sync — call via run_in_executor for async sites.
+
+    Returns ``{"lots": [...]}``. Raises on truncation or invalid JSON.
+    """
+    prompt, schema = build_kp_prompt_and_schema(terms_text or "")
     response = llm.chat_completion(
-        messages,
-        task=TASK_BID_LOTS_EXTRACTION,
-        response_format={"type": "json_schema", "json_schema": LOTS_WITH_PRICE_SCHEMA},
+        [{"role": "user", "content": prompt}],
+        task=TASK_KP_EXTRACTION,
+        response_format={"type": "json_schema", "json_schema": schema},
         max_completion_tokens=16000,
         timeout=180.0,
         usage_ctx=usage_ctx,
@@ -287,17 +313,32 @@ def extract_bid_lots(
 
     output_text = response.choices[0].message.content if response.choices else None
     if not output_text:
-        raise RuntimeError("Empty response from LLM (bid_lots_extraction)")
-    _check_truncated(response, "bid_lots_extraction", output_text)
+        raise RuntimeError("Empty response from LLM (kp_extraction)")
+    _check_truncated(response, "kp_extraction", output_text)
 
     try:
         return json.loads(output_text)
     except json.JSONDecodeError:
         logger.error(
-            "[bid_lots_extraction] json_parse_failed; raw_output_len=%d tail=%r",
+            "[kp_extraction] json_parse_failed; raw_output_len=%d tail=%r",
             len(output_text), output_text[-500:],
         )
         raise
+
+
+def extract_bid_lots(
+    terms_text: str,
+    *,
+    usage_ctx: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Backward-compat alias used by ``task_queue._run`` for M2/M3 КП ingestion.
+
+    The shape returned matches what ``task_queue._sync_bid_lots`` already expects
+    (``{"lots": [...]}``). The new fields ``registry_number`` and ``okpd2_code``
+    are present on every lot — ``_sync_bid_lots`` was updated in PR-3 to persist
+    them onto BidLot.
+    """
+    return parse_kp(terms_text, usage_ctx=usage_ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -381,48 +422,60 @@ def extract_structured_contacts_from_perplexity(
 
 
 # ---------------------------------------------------------------------------
-# КП → items extraction for M4 Нацрежим (async — called from check_runner)
+# КП → items extraction for M4 Нацрежим
 # ---------------------------------------------------------------------------
 
 
-async def extract_items_from_text(raw_text: str) -> list[dict]:
-    """Извлекает товарные позиции из произвольного текста файла поставщика.
+def kp_lots_to_check_items(lots: list[dict]) -> list[dict]:
+    """Project unified KP lots onto the shape that ``check_runner`` expects.
 
-    Возвращает список dict: name, registry_number, okpd2_code, quantity,
-    characteristics. Использует loose JSON mode (без schema), потому что
-    сценарии поставщиков очень разнородны.
+    The check pipeline reads ``name``, ``registry_number``, ``okpd2_code``,
+    ``characteristics`` and ignores ``count``/``units``/``price``. We also
+    drop empty-string ``registry_number``/``okpd2_code`` to None so the
+    downstream "is this set?" checks behave as before.
     """
-    prompt = f"""Ты — парсер файлов заявок поставщиков для закупок по 44-ФЗ/223-ФЗ.
+    items: list[dict] = []
+    for lot in lots:
+        if not isinstance(lot, dict):
+            continue
+        name = (lot.get("name") or "").strip()
+        if not name:
+            continue
+        rn = (lot.get("registry_number") or "").strip() or None
+        okpd2 = (lot.get("okpd2_code") or "").strip() or None
+        chars: list[dict] = []
+        for p in lot.get("parameters") or []:
+            if not isinstance(p, dict):
+                continue
+            pname = (p.get("name") or "").strip()
+            if not pname:
+                continue
+            pvalue = p.get("value") or ""
+            punits = (p.get("units") or "").strip()
+            # Concatenate units onto the value the same way the old M4 parser did,
+            # so the LLM comparator sees "300 мм" instead of just "300".
+            if punits:
+                pvalue = f"{pvalue} {punits}".strip()
+            chars.append({"name": pname, "value": pvalue})
+        items.append({
+            "name": name,
+            "registry_number": rn,
+            "okpd2_code": okpd2,
+            "characteristics": chars,
+        })
+    return items
 
-Из текста ниже извлеки все товарные позиции. Для каждой позиции верни JSON-объект:
-- name: наименование товара (строка)
-- registry_number: реестровый номер по 719 ПП (строка типа «РПП-12345678» или просто цифры; null если нет)
-- okpd2_code: код ОКПД 2 (формат XX.XX.XX.XXX; null если нет)
-- quantity: количество (число или строка; null если нет)
-- characteristics: массив {{name: "...", value: "..."}}
 
-Верни JSON-объект с полем "items": массив позиций. Только JSON.
+async def extract_items_from_text(raw_text: str) -> list[dict]:
+    """Async wrapper for ``check_runner.run_check`` (M4 file path).
 
-Текст:
-{raw_text[:12000]}"""
-
-    parsed = await llm.achat_json(
-        [{"role": "user", "content": prompt}],
-        task=TASK_KP_ITEMS_EXTRACTION,
-        max_completion_tokens=8000,
-        timeout=180.0,
-    )
-
-    if isinstance(parsed, list):
-        return parsed
-    for key in ("items", "products", "товары", "позиции"):
-        if key in parsed:
-            return parsed[key]
-    # fallback: first list value
-    for v in parsed.values():
-        if isinstance(v, list):
-            return v
-    return []
+    Calls the unified ``parse_kp`` in a worker thread (sync openai SDK)
+    and reshapes the result to the M4 dict format.
+    """
+    loop = asyncio.get_running_loop()
+    payload = await loop.run_in_executor(None, parse_kp, raw_text)
+    lots = payload.get("lots") or []
+    return kp_lots_to_check_items(lots)
 
 
 # ---------------------------------------------------------------------------

@@ -18,6 +18,7 @@ def create_db_and_tables() -> None:
     _ensure_user_columns()
     _ensure_purchase_columns()
     _ensure_llmtask_columns()
+    _ensure_bidlot_columns()
 
 
 def _ensure_supplier_contact_columns() -> None:
@@ -75,6 +76,26 @@ def _ensure_llmtask_columns() -> None:
             if column_name in existing_columns:
                 continue
             conn.execute(text(f"ALTER TABLE llmtask ADD COLUMN {column_name} {column_type}"))
+
+
+def _ensure_bidlot_columns() -> None:
+    """Add registry_number / okpd2_code introduced in PR-3.
+
+    These columns are populated by ``task_queue._sync_bid_lots`` from the
+    unified KP parser output, and consumed by the M4 Нацрежим path-2
+    endpoint (``/regime/.../check/from-bid/{bid_id}``).
+    """
+    expected_columns = {
+        "registry_number": "VARCHAR",
+        "okpd2_code": "VARCHAR",
+    }
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        existing_columns = {column["name"] for column in inspector.get_columns("bidlot")}
+        for column_name, column_type in expected_columns.items():
+            if column_name in existing_columns:
+                continue
+            conn.execute(text(f"ALTER TABLE bidlot ADD COLUMN {column_name} {column_type}"))
 
 
 def get_session() -> Iterator[Session]:

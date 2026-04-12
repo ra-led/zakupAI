@@ -441,10 +441,17 @@ class TaskQueue:
         session.commit()
 
         for lot_item in lots_payload:
+            # The unified KP parser always returns "" for missing values; turn
+            # them into None so the DB column reads as NULL and downstream
+            # M4 checks (`if rn:`) work correctly.
+            registry_number = (lot_item.get("registry_number") or "").strip() or None
+            okpd2_code = (lot_item.get("okpd2_code") or "").strip() or None
             lot = BidLot(
                 bid_id=bid_id,
                 name=lot_item.get("name", "Лот"),
                 price=lot_item.get("price", ""),
+                registry_number=registry_number,
+                okpd2_code=okpd2_code,
             )
             session.add(lot)
             session.commit()

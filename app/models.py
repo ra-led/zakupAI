@@ -144,6 +144,12 @@ class BidLot(SQLModel, table=True):
     bid_id: int = Field(foreign_key="bid.id")
     name: str
     price: Optional[str] = None
+    # Извлечённые из КП реквизиты товара. Используются в M4 Нацрежим path 2:
+    # `POST /regime/purchases/{id}/check/from-bid/{bid_id}` берёт BidLot и
+    # формирует RegimeCheckItem без повторной загрузки файла. Оба поля
+    # необязательные — у многих КП таких данных нет.
+    registry_number: Optional[str] = Field(default=None, index=True)
+    okpd2_code: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

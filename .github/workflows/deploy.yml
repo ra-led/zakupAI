@@ -101,12 +101,27 @@ jobs:
             docker compose -f docker-compose.prod.yml build --no-cache frontend
             docker compose -f docker-compose.prod.yml build backend etl doc-to-md
 
+            # gisp-scraper has a heavy chromium layer (~30s on first build),
+            # so we only rebuild it when something inside gisp-scraper/
+            # actually changed in this push. The buildx COPY layer has
+            # bitten us before so we use --no-cache to be safe when we do
+            # rebuild.
+            if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q "^gisp-scraper/"; then
+              echo "  gisp-scraper/ changed in this push — rebuilding"
+              docker compose -f docker-compose.prod.yml build --no-cache gisp-scraper
+            elif ! docker image inspect zakupai-gisp-scraper >/dev/null 2>&1; then
+              echo "  gisp-scraper image missing on host — building"
+              docker compose -f docker-compose.prod.yml build --no-cache gisp-scraper
+            else
+              echo "  gisp-scraper/ unchanged, reusing existing image"
+            fi
+
             echo "=== up ==="
             # --force-recreate makes compose tear down the existing
             # container instead of relying on image-digest comparison
             # (which has bitten us — see incident 2026-04-11).
             docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps frontend
-            docker compose -f docker-compose.prod.yml up -d backend etl doc-to-md db
+            docker compose -f docker-compose.prod.yml up -d backend etl doc-to-md db gisp-scraper
             docker compose -f docker-compose.prod.yml restart nginx
 
             echo "=== local sanity (build.txt inside container) ==="

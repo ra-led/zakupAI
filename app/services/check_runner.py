@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Max concurrent item checks (don't hammer APIs too hard)
 MAX_CONCURRENT = 5
 
-# In-memory progress store: check_id -> {total, processed, status, message, timings}
+# In-memory progress store: check_id -> {total, processed, status, message, timings, stages}
 _progress: dict[int, dict] = {}
 
 
@@ -31,8 +31,31 @@ def _get_session() -> SMSession:
     return SMSession(engine)
 
 
+def _make_stage(name: str, status: str = "pending", detail: str = "") -> dict:
+    """Create a stage entry. status: pending | in_progress | done | skipped."""
+    return {"name": name, "status": status, "detail": detail}
+
+
+def _update_stage(check_id: int, index: int, status: str, detail: str = "") -> None:
+    """Update a specific stage in the progress store."""
+    p = _progress.get(check_id)
+    if p and "stages" in p and index < len(p["stages"]):
+        p["stages"][index]["status"] = status
+        if detail:
+            p["stages"][index]["detail"] = detail
+
+
+# Stage indices (constants for readability)
+STAGE_PARSE = 0
+STAGE_CHECK_ITEMS = 1
+STAGE_REPORT = 2
+
+
 def get_progress(check_id: int) -> dict:
-    return _progress.get(check_id, {"total": 0, "processed": 0, "status": "pending", "message": ""})
+    return _progress.get(check_id, {
+        "total": 0, "processed": 0, "status": "pending", "message": "",
+        "stages": [],
+    })
 
 
 async def run_check(check_id: int, db: Session) -> None:
@@ -48,7 +71,15 @@ async def run_check(check_id: int, db: Session) -> None:
     timings: dict[str, float] = {}
     pipeline_start = time.monotonic()
 
-    _progress[check_id] = {"total": 0, "processed": 0, "status": "processing", "message": "Парсинг файла..."}
+    _progress[check_id] = {
+        "total": 0, "processed": 0, "status": "processing",
+        "message": "Парсинг файла...",
+        "stages": [
+            _make_stage("Парсинг файла", "in_progress"),
+            _make_stage("Проверка товаров"),
+            _make_stage("Формирование отчёта"),
+        ],
+    }
 
     try:
         t0 = time.monotonic()
@@ -61,6 +92,7 @@ async def run_check(check_id: int, db: Session) -> None:
         if not items:
             _set_error(check, db, "Не удалось извлечь товары из файла")
             return
+        _update_stage(check_id, STAGE_PARSE, "done", f"{len(items)} позиций")
         await _process_items_into_check(
             check_id, check, items, db, timings, pipeline_start
         )
@@ -91,6 +123,11 @@ async def run_check_from_items(
         "processed": 0,
         "status": "processing",
         "message": "Проверка товаров...",
+        "stages": [
+            _make_stage("Парсинг файла", "skipped", "Из существующего КП"),
+            _make_stage("Проверка товаров", "in_progress", f"0 из {len(items)}"),
+            _make_stage("Формирование отчёта"),
+        ],
     }
 
     try:
@@ -117,12 +154,11 @@ async def _process_items_into_check(
     check.status = "processing"
     db.commit()
 
-    _progress[check_id] = {
-        "total": len(items),
-        "processed": 0,
-        "status": "processing",
-        "message": "Проверка товаров...",
-    }
+    p = _progress[check_id]
+    p["total"] = len(items)
+    p["processed"] = 0
+    p["message"] = "Проверка товаров..."
+    _update_stage(check_id, STAGE_CHECK_ITEMS, "in_progress", f"0 из {len(items)}")
 
     ok = warning = error = not_found = 0
     processed_count = 0
@@ -199,12 +235,9 @@ async def _process_items_into_check(
             # Update progress (thread-safe)
             async with lock:
                 processed_count += 1
-                _progress[check_id] = {
-                    "total": len(items),
-                    "processed": processed_count,
-                    "status": "processing",
-                    "message": f"Проверено {processed_count} из {len(items)}",
-                }
+                _progress[check_id]["processed"] = processed_count
+                _progress[check_id]["message"] = f"Проверено {processed_count} из {len(items)}"
+                _update_stage(check_id, STAGE_CHECK_ITEMS, "in_progress", f"{processed_count} из {len(items)}")
 
             return pos, check_item
 
@@ -238,6 +271,8 @@ async def _process_items_into_check(
     db.commit()
 
     # Step 3: Generate PDF report
+    _update_stage(check_id, STAGE_CHECK_ITEMS, "done", f"{len(items)} из {len(items)}")
+    _update_stage(check_id, STAGE_REPORT, "in_progress")
     _progress[check_id]["message"] = "Формирование отчёта..."
     t0 = time.monotonic()
     reports_dir = os.getenv("REPORTS_DIR", "./reports")
@@ -269,12 +304,16 @@ async def _process_items_into_check(
     check.status = "done"
     db.commit()
 
+    _update_stage(check_id, STAGE_REPORT, "done")
+    # Preserve stages in final progress
+    stages = _progress.get(check_id, {}).get("stages", [])
     _progress[check_id] = {
         "total": len(items),
         "processed": len(items),
         "status": "done",
         "message": f"Готово за {total_time}с (≈{timings['avg_per_item']}с/товар)",
         "timings": timings,
+        "stages": stages,
     }
 
 
@@ -294,6 +333,7 @@ def _record_pipeline_failure(
         "processed": prev.get("processed", 0),
         "status": "error",
         "message": f"Ошибка: {exc}",
+        "stages": prev.get("stages", []),
     }
 
 

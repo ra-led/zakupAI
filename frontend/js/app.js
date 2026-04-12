@@ -1463,6 +1463,7 @@
   // ── National Regime ─────────────────────────────────────────────────
 
   var regimePollingTimer = null;
+  var regimeTimerInterval = null;
 
   function initRegime() {
     var btnCheck = $('btn-regime-check');
@@ -1508,8 +1509,26 @@
     });
   }
 
+  var regimeStartTime = null;
+
+  function startRegimeTimer() {
+    if (!regimeStartTime) regimeStartTime = Date.now();
+    clearInterval(regimeTimerInterval);
+    regimeTimerInterval = setInterval(function () {
+      var el = document.getElementById('regime-elapsed');
+      if (el) el.textContent = formatElapsed(Date.now() - regimeStartTime);
+    }, 1000);
+  }
+
+  function stopRegimeTimer() {
+    clearInterval(regimeTimerInterval);
+    regimeTimerInterval = null;
+  }
+
   function startRegimeCheck() {
     if (!currentPurchase) return;
+    regimeStartTime = Date.now();
+    startRegimeTimer();
     $('regime-results').innerHTML = '<div class="search-status"><div class="spinner"></div><span>Запуск проверки национального режима...</span></div>';
     API.apiFetch('/regime/purchases/' + currentPurchase.id + '/check', { method: 'POST' })
       .then(function (data) {
@@ -1531,7 +1550,9 @@
           return;
         }
         if (data.status === 'pending' || data.status === 'processing') {
-          $('regime-results').innerHTML = '<div class="search-status"><div class="spinner"></div><span>Проверка выполняется...</span></div>';
+          regimeStartTime = regimeStartTime || Date.now();
+          startRegimeTimer();
+          renderRegimeProgress({status: 'processing', stages: [], total: 0, processed: 0, message: 'Проверка выполняется...'});
           pollRegimeCheck();
         } else {
           renderRegimeResults(data);
@@ -1546,19 +1567,120 @@
     if (regimePollingTimer) clearTimeout(regimePollingTimer);
     regimePollingTimer = setTimeout(function () {
       if (!currentPurchase) return;
-      API.apiFetch('/regime/purchases/' + currentPurchase.id + '/check')
-        .then(function (data) {
-          if (data && (data.status === 'pending' || data.status === 'processing')) {
+      API.apiFetch('/regime/purchases/' + currentPurchase.id + '/check/progress')
+        .then(function (progress) {
+          if (progress && (progress.status === 'pending' || progress.status === 'processing')) {
+            renderRegimeProgress(progress);
             pollRegimeCheck();
+          } else if (progress && progress.status === 'done') {
+            // Load full results with items
+            API.apiFetch('/regime/purchases/' + currentPurchase.id + '/check')
+              .then(function (data) { renderRegimeResults(data); })
+              .catch(function () { renderRegimeResults(null); });
+          } else if (progress && progress.status === 'error') {
+            renderRegimeError(progress.message);
           } else {
-            renderRegimeResults(data);
+            // Fallback: load check data directly
+            API.apiFetch('/regime/purchases/' + currentPurchase.id + '/check')
+              .then(function (data) {
+                if (data && (data.status === 'pending' || data.status === 'processing')) {
+                  renderRegimeProgress({status: 'processing', stages: [], total: 0, processed: 0, message: ''});
+                  pollRegimeCheck();
+                } else {
+                  renderRegimeResults(data);
+                }
+              })
+              .catch(function () {});
           }
         })
-        .catch(function () { });
-    }, 3000);
+        .catch(function () {
+          // Progress endpoint unavailable — fall back to old polling
+          API.apiFetch('/regime/purchases/' + currentPurchase.id + '/check')
+            .then(function (data) {
+              if (data && (data.status === 'pending' || data.status === 'processing')) {
+                pollRegimeCheck();
+              } else {
+                renderRegimeResults(data);
+              }
+            })
+            .catch(function () {});
+        });
+    }, 2000);
+  }
+
+  function renderRegimeProgress(progress) {
+    var stages = progress.stages || [];
+    var total = progress.total || 0;
+    var processed = progress.processed || 0;
+
+    var elapsed = regimeStartTime ? formatElapsed(Date.now() - regimeStartTime) : '';
+
+    var html = '<div class="search-status" style="flex-direction:column;align-items:stretch">';
+    html += '<div style="display:flex;align-items:center;gap:12px">';
+    html += '<div class="spinner"></div>';
+    html += '<div><strong>Проверка национального режима...</strong></div>';
+    if (elapsed) html += '<div id="regime-elapsed" style="margin-left:auto;font-size:13px;color:var(--text-secondary)">' + elapsed + '</div>';
+    html += '</div>';
+
+    // Stages with checkmarks
+    if (stages.length > 0) {
+      html += '<div style="margin-top:8px">';
+      for (var i = 0; i < stages.length; i++) {
+        var s = stages[i];
+        var icon, textStyle;
+        if (s.status === 'done') {
+          icon = '<span style="color:var(--success)">&#10003;</span>';
+          textStyle = 'color:var(--text-secondary)';
+        } else if (s.status === 'skipped') {
+          icon = '<span style="color:var(--text-secondary)">&#8212;</span>';
+          textStyle = 'color:var(--text-secondary);text-decoration:line-through';
+        } else if (s.status === 'in_progress') {
+          icon = '<span class="spinner" style="width:12px;height:12px;border-width:1.5px;display:inline-block;vertical-align:middle"></span>';
+          textStyle = 'font-weight:500';
+        } else {
+          icon = '<span style="color:var(--text-secondary)">&#9675;</span>';
+          textStyle = 'color:var(--text-secondary)';
+        }
+        html += '<div style="font-size:13px;margin-bottom:4px;' + textStyle + '">' + icon + ' ' + escapeHtml(s.name);
+        if (s.detail) {
+          html += '<span style="margin-left:8px;font-weight:600;color:var(--accent)">' + escapeHtml(s.detail) + '</span>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    // Progress bar for items check
+    if (total > 0 && processed < total) {
+      var pct = Math.round((processed / total) * 100);
+      html += '<div style="margin-top:10px">';
+      html += '<div style="height:6px;background:var(--bg);border-radius:4px;overflow:hidden;border:1px solid var(--border)">';
+      html += '<div style="height:100%;width:' + pct + '%;background:linear-gradient(90deg,var(--accent),var(--success));transition:width .3s"></div>';
+      html += '</div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:4px">' + processed + ' из ' + total + ' товаров (' + pct + '%)</div>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+    $('regime-results').innerHTML = html;
+  }
+
+  function renderRegimeError(message) {
+    stopRegimeTimer();
+    regimeStartTime = null;
+    var html = '<div class="search-status" style="background:var(--danger-bg);flex-direction:column;align-items:stretch">';
+    html += '<div style="display:flex;align-items:center;gap:12px">';
+    html += '<div style="color:var(--danger);font-size:18px">&#10007;</div>';
+    html += '<div><strong style="color:var(--danger)">Ошибка проверки</strong></div>';
+    html += '</div>';
+    if (message) html += '<div style="font-size:13px;margin-top:6px;color:var(--text-secondary)">' + escapeHtml(message) + '</div>';
+    html += '</div>';
+    $('regime-results').innerHTML = html;
   }
 
   function renderRegimeResults(data) {
+    stopRegimeTimer();
+    regimeStartTime = null;
     if (!data || !data.items || data.items.length === 0) {
       $('regime-results').innerHTML = '<div class="empty-state">Нет результатов проверки</div>';
       return;
@@ -1628,6 +1750,7 @@
     if (comparisonPollingTimer) { clearTimeout(comparisonPollingTimer); comparisonPollingTimer = null; }
     if (regimePollingTimer) { clearTimeout(regimePollingTimer); regimePollingTimer = null; }
     stopSearchTimer();
+    stopRegimeTimer();
   }
 
   // ── Init ───────────────────────────────────────────────────────────

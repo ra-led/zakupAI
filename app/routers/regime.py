@@ -18,7 +18,7 @@ from ..models import (
     RegimeCheckItem,
     User,
 )
-from ..services.check_runner import run_check_from_items
+from ..services.check_runner import get_progress, run_check_from_items
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +178,40 @@ def get_regime_check_items(
         .where(RegimeCheckItem.check_id == check.id)
     )
     return session.exec(items_stmt).all()
+
+
+# ---------------------------------------------------------------------------
+# Real-time progress (in-memory, for polling UI)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/purchases/{purchase_id}/check/progress")
+def get_regime_check_progress(
+    purchase_id: int,
+    session=Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Return real-time pipeline progress for the latest regime check.
+
+    Response shape::
+
+        {
+          "check_id": 42,
+          "total": 5,
+          "processed": 3,
+          "status": "processing",
+          "message": "Проверено 3 из 5",
+          "stages": [
+            {"name": "Парсинг файла", "status": "done", "detail": "5 позиций"},
+            {"name": "Проверка товаров", "status": "in_progress", "detail": "3 из 5"},
+            {"name": "Формирование отчёта", "status": "pending", "detail": ""}
+          ]
+        }
+    """
+    _get_user_purchase(session, purchase_id, user)
+    check = _get_latest_check(session, purchase_id)
+    progress = get_progress(check.id)
+    return {"check_id": check.id, **progress}
 
 
 # ---------------------------------------------------------------------------

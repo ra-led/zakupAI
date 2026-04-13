@@ -6,6 +6,7 @@ import math
 from typing import Dict, List, Optional, Tuple
 
 from openai import OpenAI
+from sqlalchemy import update
 from sqlmodel import Session, select
 
 from app.database import create_db_and_tables, engine
@@ -23,6 +24,7 @@ logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(me
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = float(os.getenv("ETL_POLL_INTERVAL", "5"))
+DEFAULT_WORKER_TASK_TYPES = ["supplier_search", "supplier_search_perplexity", "lot_comparison"]
 
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OPENROUTER_EMBEDDING_MODEL = os.getenv("OPENROUTER_EMBEDDING_MODEL", "perplexity/pplx-embed-v1-4b")
@@ -650,30 +652,51 @@ def _process_task(task: LLMTask) -> None:
 
 
 def run_worker() -> None:
+    task_types_raw = (os.getenv("WORKER_TASK_TYPES") or "").strip()
+    task_types = (
+        [item.strip() for item in task_types_raw.split(",") if item.strip()]
+        if task_types_raw
+        else DEFAULT_WORKER_TASK_TYPES
+    )
+    if not task_types:
+        raise RuntimeError("WORKER_TASK_TYPES is empty")
+
+    logger.info("Worker started for task types: %s", ",".join(task_types))
     create_db_and_tables()
     while True:
+        task_id = None
         with Session(engine) as session:
-            task = session.exec(
+            candidate_task = session.exec(
                 select(LLMTask)
                 .where(
                     LLMTask.status == "queued",
-                    LLMTask.task_type.in_(["supplier_search", "supplier_search_perplexity", "lot_comparison"]),
+                    LLMTask.task_type.in_(task_types),
                 )
                 .order_by(LLMTask.created_at)
             ).first()
 
-            if not task:
+            if not candidate_task:
                 time.sleep(POLL_INTERVAL)
                 continue
 
-            task.status = "in_progress"
-            session.add(task)
+            claim = session.exec(
+                update(LLMTask)
+                .where(
+                    LLMTask.id == candidate_task.id,
+                    LLMTask.status == "queued",
+                )
+                .values(status="in_progress")
+            )
             session.commit()
-            session.refresh(task)
-            task_id = task.id
+            if getattr(claim, "rowcount", 0):
+                task_id = candidate_task.id
 
         if task_id:
-            _process_task(task)
+            with Session(engine) as session:
+                claimed_task = session.get(LLMTask, task_id)
+            if not claimed_task:
+                continue
+            _process_task(claimed_task)
 
 
 def main() -> None:

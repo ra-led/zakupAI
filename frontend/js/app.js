@@ -395,7 +395,7 @@
 
       try {
         showMessage('Конвертация документа...');
-        var converted = await API.convertTechTaskFile(file);
+        var converted = await API.convertTechTaskFile(file, currentPurchase ? currentPurchase.id : null);
         if (converted && converted.markdown) {
           var existingTerms = currentPurchase.terms_text || '';
           var newTerms = existingTerms ? existingTerms + '\n\n' + converted.markdown : converted.markdown;
@@ -1263,7 +1263,7 @@
         // Convert file if uploaded
         if (file) {
           showMessage('Конвертация документа...');
-          var converted = await API.convertTechTaskFile(file);
+          var converted = await API.convertTechTaskFile(file, currentPurchase ? currentPurchase.id : null);
           if (converted && converted.markdown) {
             bidText = bidText ? bidText + '\n\n' + converted.markdown : converted.markdown;
           }
@@ -1340,7 +1340,7 @@
       }
       try {
         showMessage('Конвертация ТЗ...');
-        var converted = await API.convertTechTaskFile(file);
+        var converted = await API.convertTechTaskFile(file, currentPurchase ? currentPurchase.id : null);
         if (converted && converted.markdown) {
           var existingTerms = currentPurchase.terms_text || '';
           var newTerms = existingTerms ? existingTerms + '\n\n' + converted.markdown : converted.markdown;
@@ -1379,7 +1379,7 @@
         var label = file.name + ' (' + (fi + 1) + '/' + files.length + ')';
         if (statusEl) statusEl.innerHTML = '<div class="upload-inline-status"><div class="spinner" style="width:14px;height:14px"></div> Конвертация: ' + escapeHtml(label) + '</div>';
         try {
-          var converted = await API.convertTechTaskFile(file);
+          var converted = await API.convertTechTaskFile(file, currentPurchase ? currentPurchase.id : null);
           if (converted && converted.markdown) {
             if (statusEl) statusEl.innerHTML = '<div class="upload-inline-status"><div class="spinner" style="width:14px;height:14px"></div> Сохранение: ' + escapeHtml(label) + '</div>';
             var supplierName = file.name.replace(/\.[^.]+$/, '');
@@ -2030,7 +2030,7 @@
       var file = files[i];
       try {
         _setRegimeUploadStatus('Конвертация ' + (i + 1) + '/' + total + ': ' + file.name, 'info');
-        var converted = await API.convertTechTaskFile(file);
+        var converted = await API.convertTechTaskFile(file, currentPurchase ? currentPurchase.id : null);
         if (converted && converted.markdown) {
           var supplierName = file.name.replace(/\.[^.]+$/, '');
           await API.apiFetch('/purchases/' + currentPurchase.id + '/bids', {

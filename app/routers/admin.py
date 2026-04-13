@@ -462,7 +462,7 @@ def get_call_trace(
 @router.post("/track-conversion")
 def track_conversion_usage(
     payload: dict,
-    _admin: User = Depends(get_admin_user),
+    _user: User = Depends(get_admin_user),
 ) -> dict:
     """Record doc-to-md (Mistral OCR) usage from frontend calls."""
     from ..usage_tracking import record_usage

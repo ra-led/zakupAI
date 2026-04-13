@@ -39,6 +39,10 @@ services:
       QUERY_DOCS_LIMIT: ${QUERY_DOCS_LIMIT:-3}
       ENABLE_EMBEDDED_QUEUE: ${ENABLE_EMBEDDED_QUEUE:-true}
       GISP_SCRAPER_URL: ${GISP_SCRAPER_URL:-http://gisp-scraper:8000}
+      LLM_TRACE_ENABLED: ${LLM_TRACE_ENABLED:-false}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
     expose:
       - "8000"
 

@@ -87,7 +87,7 @@
    * @param {File} file - File object to convert
    * @returns {Promise<any>}
    */
-  async function convertTechTaskFile(file) {
+  async function convertTechTaskFile(file, purchaseId) {
     var formData = new FormData();
     formData.append('file', file);
 
@@ -127,9 +127,11 @@
 
     // Track Mistral OCR usage if returned by doc-to-md
     if (data && data.usage) {
+      var trackBody = { usage: data.usage };
+      if (purchaseId) trackBody.purchase_id = purchaseId;
       apiFetch('/admin/track-conversion', {
         method: 'POST',
-        body: { usage: data.usage },
+        body: trackBody,
       }).catch(function () { /* ignore tracking errors */ });
     }
 

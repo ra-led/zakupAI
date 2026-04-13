@@ -40,7 +40,7 @@ services:
     expose:
       - "8000"
 
-  etl-suppliers:
+  etl-suppliers-1:
     build:
       context: .
       dockerfile: etl/Dockerfile
@@ -66,7 +66,59 @@ services:
     expose:
       - "8002"
 
-  etl-compare:
+  etl-suppliers-2:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://zakupai:zakupai@db:5432/zakupai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
+      PERPLEXITY_MODEL: ${PERPLEXITY_MODEL}
+      PERPLEXITY_MIN_CONTACTS: ${PERPLEXITY_MIN_CONTACTS}
+      YANDEX_API_KEY: ${YANDEX_API_KEY}
+      YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID}
+      PAGE_LOAD_TIMEOUT: ${PAGE_LOAD_TIMEOUT:-25}
+      QUERY_DOCS_LIMIT: ${QUERY_DOCS_LIMIT:-3}
+      ETL_POLL_INTERVAL: ${ETL_POLL_INTERVAL:-5}
+      WORKER_TASK_TYPES: supplier_search,supplier_search_perplexity
+    expose:
+      - "8002"
+
+  etl-suppliers-3:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://zakupai:zakupai@db:5432/zakupai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
+      PERPLEXITY_MODEL: ${PERPLEXITY_MODEL}
+      PERPLEXITY_MIN_CONTACTS: ${PERPLEXITY_MIN_CONTACTS}
+      YANDEX_API_KEY: ${YANDEX_API_KEY}
+      YANDEX_FOLDER_ID: ${YANDEX_FOLDER_ID}
+      PAGE_LOAD_TIMEOUT: ${PAGE_LOAD_TIMEOUT:-25}
+      QUERY_DOCS_LIMIT: ${QUERY_DOCS_LIMIT:-3}
+      ETL_POLL_INTERVAL: ${ETL_POLL_INTERVAL:-5}
+      WORKER_TASK_TYPES: supplier_search,supplier_search_perplexity
+    expose:
+      - "8002"
+
+  etl-compare-1:
     build:
       context: .
       dockerfile: etl/Dockerfile

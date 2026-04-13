@@ -345,6 +345,7 @@ def list_traced_purchases(
             "call_count": int(r[1]),
             "total_tokens": int(r[2]),
             "has_traces": has_traces,
+            "is_archived": purchase.is_archived if purchase else False,
         })
     return result
 

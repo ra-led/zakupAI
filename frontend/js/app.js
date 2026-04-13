@@ -2907,17 +2907,24 @@
         el.innerHTML = '<div class="empty-state">Нет закупок с LLM-вызовами</div>';
         return;
       }
-      var html = '';
+      var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+      html += '<thead><tr style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);border-bottom:1px solid var(--border)">';
+      html += '<th style="text-align:left;padding:6px 8px;font-weight:500">Закупка</th>';
+      html += '<th style="text-align:right;padding:6px 8px;font-weight:500;white-space:nowrap">Вызовы</th>';
+      html += '<th style="text-align:right;padding:6px 8px;font-weight:500;white-space:nowrap">Токены</th>';
+      html += '<th style="text-align:center;padding:6px 8px;font-weight:500">Trace</th>';
+      html += '</tr></thead><tbody>';
       for (var i = 0; i < list.length; i++) {
         var p = list[i];
-        html += '<div class="lot-item" style="cursor:pointer" onclick="window._loadTraceForPurchase(' + p.id + ')">';
-        html += '<div class="lot-info">';
-        html += '<div style="font-weight:600;font-size:13px">' + escapeHtml(p.name) + '</div>';
-        html += '<div style="font-size:12px;color:var(--text-secondary)">';
-        html += p.call_count + ' вызовов &middot; ' + _fmtTokens(p.total_tokens) + ' токенов';
-        if (p.has_traces) html += ' &middot; <span style="color:var(--success)">trace</span>';
-        html += '</div></div></div>';
+        var archived = p.is_archived ? '<span style="font-size:10px;color:var(--text-secondary);background:var(--bg);padding:1px 5px;border-radius:3px;margin-left:4px">архив</span>' : '';
+        html += '<tr style="cursor:pointer;border-bottom:1px solid var(--border)" onmouseover="this.style.background=\'var(--accent-light)\'" onmouseout="this.style.background=\'\'" onclick="window._loadTraceForPurchase(' + p.id + ')">';
+        html += '<td style="padding:6px 8px;font-weight:500">' + escapeHtml(p.name) + archived + '</td>';
+        html += '<td style="padding:6px 8px;text-align:right;color:var(--text-secondary)">' + p.call_count + '</td>';
+        html += '<td style="padding:6px 8px;text-align:right;color:var(--text-secondary)">' + _fmtTokens(p.total_tokens) + '</td>';
+        html += '<td style="padding:6px 8px;text-align:center">' + (p.has_traces ? '<span style="color:var(--success)">&#9679;</span>' : '<span style="color:var(--border)">&#9679;</span>') + '</td>';
+        html += '</tr>';
       }
+      html += '</tbody></table>';
       el.innerHTML = html;
     }).catch(function (err) {
       showError('Ошибка загрузки: ' + err.message);
@@ -2930,6 +2937,8 @@
     API.apiFetch('/admin/trace/purchases/' + purchaseId).then(function (data) {
       _renderTraceSummary(data);
       _renderTraceTimeline(data);
+      var summaryEl = $('trace-summary');
+      if (summaryEl) summaryEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }).catch(function (err) {
       showError('Ошибка загрузки trace: ' + err.message);
     });

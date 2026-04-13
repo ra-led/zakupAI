@@ -2325,6 +2325,7 @@
     if (status === 'ok') { cls = 'regime-check regime-pass'; icon = '✓'; detail = actual ? 'Найден в реестре' : 'Найден, не актуален'; }
     else if (status === 'not_actual') { cls = 'regime-check regime-fail'; icon = '✗'; detail = 'Запись не актуальна'; }
     else if (status === 'not_found') { cls = 'regime-check regime-fail'; icon = '✗'; detail = 'Не найден в реестре'; }
+    else if (status === 'registry_error') { cls = 'regime-check regime-unknown'; icon = '⚠'; detail = 'Проблемы с доступом к реестру'; }
     if (certEnd) detail += ', до ' + certEnd;
     return '<div class="' + cls + '"><div class="regime-check-label">' + icon + ' ' + escapeHtml(label) + '</div><div class="regime-check-value">' + detail + '</div></div>';
   }
@@ -2362,9 +2363,9 @@
     if (status === 'ok') html += 'Характеристики совпадают';
     else if (status === 'mismatch') html += 'Несоответствие характеристик';
     else if (status === 'warning') html += 'Требует внимания';
-    else if (status === 'skipped') html += 'Нет характеристик для сравнения';
+    else if (status === 'skipped') html += 'Пропущено (нет данных реестра)';
     else if (status === 'not_found') html += 'Не найден в реестре';
-    else if (status === 'gisp_unavailable') html += 'ГИСП недоступен';
+    else if (status === 'gisp_unavailable') html += 'Проблемы с доступом к ГИСП';
     if (item.gisp_url) html += ' <a href="' + escapeHtml(item.gisp_url) + '" target="_blank" style="margin-left:6px">Карточка ГИСП</a>';
     html += '</div>';
 

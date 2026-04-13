@@ -2919,14 +2919,16 @@
       var active = list.filter(function (p) { return !p.is_archived; });
       var archived = list.filter(function (p) { return p.is_archived; });
 
+      function _fmtDate(iso) { return iso ? iso.substring(0, 10).split('-').reverse().join('.') : '—'; }
+
       function _traceTableRows(items) {
         var h = '';
         for (var i = 0; i < items.length; i++) {
           var p = items[i];
-          var dateStr = p.created_at ? p.created_at.substring(0, 10).split('-').reverse().join('.') : '';
           h += '<tr style="cursor:pointer;border-bottom:1px solid var(--border)" onmouseover="this.style.background=\'var(--accent-light)\'" onmouseout="this.style.background=\'\'" onclick="window._loadTraceForPurchase(' + p.id + ')">';
           h += '<td style="padding:6px 8px;font-weight:500">' + escapeHtml(p.name) + '</td>';
-          h += '<td style="padding:6px 8px;text-align:center;color:var(--text-secondary);font-size:12px">' + dateStr + '</td>';
+          h += '<td style="padding:6px 8px;text-align:center;color:var(--text-secondary);font-size:12px">' + _fmtDate(p.created_at) + '</td>';
+          h += '<td style="padding:6px 8px;text-align:center;color:var(--text-secondary);font-size:12px">' + _fmtDate(p.last_call) + '</td>';
           h += '<td style="padding:6px 8px;text-align:right;color:var(--text-secondary)">' + p.call_count + '</td>';
           h += '<td style="padding:6px 8px;text-align:right;color:var(--text-secondary)">' + _fmtTokens(p.total_tokens) + '</td>';
           h += '<td style="padding:6px 8px;text-align:center">' + (p.has_traces ? '<span style="color:var(--success)">&#9679;</span>' : '<span style="color:var(--border)">&#9679;</span>') + '</td>';
@@ -2936,6 +2938,7 @@
       }
 
       var thStyle = 'font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);border-bottom:1px solid var(--border)';
+      var thPad = 'text-align:center;padding:6px 8px;font-weight:500';
       var html = '';
 
       // Active purchases
@@ -2943,7 +2946,8 @@
         html += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
         html += '<thead><tr style="' + thStyle + '">';
         html += '<th style="text-align:left;padding:6px 8px;font-weight:500">Закупка</th>';
-        html += '<th style="text-align:center;padding:6px 8px;font-weight:500">Дата</th>';
+        html += '<th style="' + thPad + '">Создана</th>';
+        html += '<th style="' + thPad + '">Посл. вызов</th>';
         html += '<th style="text-align:right;padding:6px 8px;font-weight:500;white-space:nowrap">Вызовы</th>';
         html += '<th style="text-align:right;padding:6px 8px;font-weight:500;white-space:nowrap">Токены</th>';
         html += '<th style="text-align:center;padding:6px 8px;font-weight:500">Trace</th>';
@@ -3033,7 +3037,45 @@
         html += '<span class="status ' + sc + '"><span class="status-dot"></span>' + taskStatus + '</span>';
       }
       html += '</div>';
-      for (var ci = 0; ci < calls.length; ci++) html += _renderTraceCard(calls[ci]);
+
+      // Group consecutive calls with same operation+model into collapsible batches
+      var ci = 0;
+      while (ci < calls.length) {
+        var batchOp = calls[ci].operation;
+        var batchModel = calls[ci].model;
+        var batchStart = ci;
+        while (ci < calls.length && calls[ci].operation === batchOp && calls[ci].model === batchModel) ci++;
+        var batchCalls = calls.slice(batchStart, ci);
+
+        if (batchCalls.length <= 2) {
+          // Few calls — render individually
+          for (var bi = 0; bi < batchCalls.length; bi++) html += _renderTraceCard(batchCalls[bi]);
+        } else {
+          // Many calls — render as collapsible group
+          var batchTokens = 0, batchCost = 0;
+          for (var bs = 0; bs < batchCalls.length; bs++) {
+            batchTokens += batchCalls[bs].total_tokens || 0;
+            batchCost += batchCalls[bs].cost_usd || 0;
+          }
+          var opLabel = OPERATION_LABELS[batchOp] || batchOp;
+          var batchId = 'trace-batch-' + gKey + '-' + batchStart;
+          html += '<div class="trace-card" style="border-left-color:var(--text-secondary)">';
+          html += '<div class="trace-card-header" onclick="var t=document.getElementById(\'' + batchId + '\');t.style.display=t.style.display===\'none\'?\'\':\'none\'">';
+          html += '<div><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+          html += '<span style="font-weight:600;font-size:14px">' + escapeHtml(opLabel) + '</span>';
+          html += '<span style="font-size:11px;font-family:monospace;color:var(--text-secondary);background:var(--bg);padding:2px 6px;border-radius:4px">' + escapeHtml(batchOp) + '</span>';
+          html += '<span style="background:var(--accent-light);color:var(--accent);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px">' + batchCalls.length + ' вызовов</span>';
+          if (batchModel) html += '<span style="font-size:12px;color:var(--text-secondary);font-family:monospace;background:var(--bg);padding:2px 6px;border-radius:4px">' + escapeHtml(batchModel) + '</span>';
+          html += '</div><div class="trace-stats">';
+          html += '<span class="trace-tokens-in">' + _fmtTokens(batchTokens) + ' tokens</span>';
+          html += '<span>' + _fmtCost(batchCost) + '</span>';
+          html += '</div></div>';
+          html += '<span style="font-size:12px;color:var(--text-secondary)">&#9660;</span></div>';
+          html += '<div class="trace-card-body" id="' + batchId + '" style="display:none;border-top:1px solid var(--border)">';
+          for (var bj = 0; bj < batchCalls.length; bj++) html += _renderTraceCard(batchCalls[bj]);
+          html += '</div></div>';
+        }
+      }
       html += '</div>';
     }
     el.innerHTML = html || '<div class="empty-state">Нет LLM-вызовов по этой закупке</div>';

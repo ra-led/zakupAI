@@ -344,6 +344,7 @@ def list_traced_purchases(
             "created_at": purchase.created_at.isoformat() + "Z" if purchase else None,
             "call_count": int(r[1]),
             "total_tokens": int(r[2]),
+            "last_call": r[3].isoformat() + "Z" if r[3] else None,
             "has_traces": has_traces,
             "is_archived": purchase.is_archived if purchase else False,
         })

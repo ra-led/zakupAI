@@ -81,6 +81,8 @@
 
       <!-- ==================== TAB 0: DASHBOARD ==================== -->
       <div class="tab-content active" id="tab-dashboard">
+        <!-- Quick actions -->
+        <div id="dashboard-quick-actions"></div>
         <div class="card" style="margin-bottom:16px">
           <div class="card-body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
             <select id="dashboard-filter-archived" class="form-input" style="width:auto">
@@ -414,18 +416,10 @@
             <input class="form-input" id="inp-purchase-name" placeholder="Например, Поставка серверов" required>
           </div>
           <div class="form-group">
-            <label class="form-label">Описание / ТЗ (текст)</label>
-            <textarea class="form-textarea" id="inp-terms-text" placeholder="Кратко опишите предмет закупки"></textarea>
+            <label class="form-label">Описание (необязательно)</label>
+            <textarea class="form-textarea" id="inp-terms-text" placeholder="Кратко опишите предмет закупки" style="min-height:60px"></textarea>
           </div>
-          <div class="form-group">
-            <label class="form-label">Файл ТЗ</label>
-            <div class="upload-zone" id="purchase-tz-upload" style="padding: 16px;">
-              <div class="label" id="purchase-tz-label">Нажмите для загрузки</div>
-              <div class="hint">pdf, xlsx, doc, docx, rtf, txt</div>
-              <input type="file" id="inp-purchase-tz-file" accept=".pdf,.xlsx,.doc,.docx,.rtf,.txt" style="display:none">
-            </div>
-            <div class="form-hint">Если файл загружен, лоты будут сформированы автоматически.</div>
-          </div>
+          <input type="hidden" id="inp-purchase-target-tab" value="">
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary modal-close-btn">Отмена</button>

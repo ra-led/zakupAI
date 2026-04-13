@@ -2025,6 +2025,81 @@ input[type="checkbox"] {
 }
 
 
+/* ===== QUICK ACTIONS (Dashboard) ===== */
+
+.quick-actions {
+  margin-bottom: 20px;
+}
+.quick-actions-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.quick-action-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  text-align: center;
+}
+.quick-action-card:hover {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+.quick-action-icon {
+  font-size: 28px;
+  margin-bottom: 10px;
+}
+.quick-action-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+.quick-action-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Compact variant (when purchases exist) */
+.quick-actions-compact .quick-actions-grid {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.quick-actions-compact .quick-action-card {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+.quick-actions-compact .quick-action-icon {
+  font-size: 20px;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+.quick-actions-compact .quick-action-desc {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .quick-actions-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
 /* ===== LLM TRACE & SANDBOX ===== */
 
 .trace-card {

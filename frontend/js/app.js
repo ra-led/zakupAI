@@ -284,63 +284,71 @@
 
   function initCreatePurchase() {
     $('btn-new-purchase').addEventListener('click', function () {
+      $('inp-purchase-target-tab').value = 'search';
       openModal('modal-new-purchase');
-    });
-
-    // File upload zone click
-    $('purchase-tz-upload').addEventListener('click', function () {
-      $('inp-purchase-tz-file').click();
-    });
-    $('inp-purchase-tz-file').addEventListener('change', function () {
-      var file = this.files[0];
-      if (file) {
-        $('purchase-tz-label').textContent = file.name;
-      }
     });
 
     $('form-new-purchase').addEventListener('submit', async function (e) {
       e.preventDefault();
       var name = $('inp-purchase-name').value.trim();
       var termsText = $('inp-terms-text').value.trim();
-      var fileInput = $('inp-purchase-tz-file');
-      var file = fileInput.files[0];
+      var targetTab = $('inp-purchase-target-tab').value || 'search';
 
       if (!name) { showError('Введите название закупки'); return; }
 
       try {
-        // Convert file if uploaded
-        if (file) {
-          showMessage('Конвертация документа...');
-          var converted = await API.convertTechTaskFile(file);
-          if (converted && converted.markdown) {
-            termsText = termsText ? termsText + '\n\n' + converted.markdown : converted.markdown;
-          }
-        }
-
         var body = { custom_name: name };
         if (termsText) body.terms_text = termsText;
         var newPurchase = await API.apiFetch('/purchases', { method: 'POST', body: body });
-        if (file) trackFile(newPurchase.id, file.name, 'tz');
         showMessage('Закупка создана');
         closeModal('modal-new-purchase');
         this.reset();
-        $('purchase-tz-label').textContent = 'Нажмите для загрузки';
         purchases.unshift(newPurchase);
 
-        // Switch to search tab BEFORE selectPurchase so the panel is visible
-        // when loadLots renders.
-        var searchTab = document.querySelector('.sidebar .tab[data-tab="search"]');
-        if (searchTab) searchTab.click();
+        var tab = document.querySelector('.sidebar .tab[data-tab="' + targetTab + '"]');
+        if (tab) tab.click();
 
         await selectPurchase(newPurchase);
-
-        // Reflect the uploaded filename in the search-tab upload zone
-        if (file) markTzUploadZone(file.name);
       } catch (e) {
         showError('Ошибка создания закупки: ' + e.message);
       }
     });
   }
+
+  // Quick action cards on dashboard
+  function _renderQuickActions(hasPurchases) {
+    var el = $('dashboard-quick-actions');
+    if (!el) return;
+
+    var actions = [
+      { tab: 'search', icon: '&#128270;', title: 'Найти поставщиков', desc: 'Загрузите ТЗ — AI найдёт подходящих поставщиков' },
+      { tab: 'comparison', icon: '&#9878;', title: 'Сравнить КП с ТЗ', desc: 'Загрузите ТЗ и КП — AI сравнит характеристики' },
+      { tab: 'regime', icon: '&#127479;&#127482;', title: 'Проверить нацрежим', desc: 'Загрузите КП — проверка по ПП №1875 и реестру' },
+    ];
+
+    var compact = hasPurchases ? ' quick-actions-compact' : '';
+    var html = '<div class="quick-actions' + compact + '">';
+    if (!hasPurchases) html += '<div class="quick-actions-title">Что вы хотите проверить?</div>';
+    html += '<div class="quick-actions-grid">';
+    for (var i = 0; i < actions.length; i++) {
+      var a = actions[i];
+      html += '<div class="quick-action-card" onclick="window._quickCreatePurchase(\'' + a.tab + '\')">';
+      html += '<div class="quick-action-icon">' + a.icon + '</div>';
+      html += '<div><div class="quick-action-title">' + a.title + '</div>';
+      html += '<div class="quick-action-desc">' + a.desc + '</div></div>';
+      html += '</div>';
+    }
+    html += '</div></div>';
+    el.innerHTML = html;
+  }
+
+  window._quickCreatePurchase = function (tab) {
+    $('inp-purchase-target-tab').value = tab;
+    $('inp-purchase-name').value = '';
+    $('inp-terms-text').value = '';
+    openModal('modal-new-purchase');
+    setTimeout(function () { $('inp-purchase-name').focus(); }, 100);
+  };
 
   function markTzUploadZone(filename) {
     var zone = $('tz-upload-zone');
@@ -2539,6 +2547,7 @@
   }
 
   function renderDashboardCards(items) {
+    _renderQuickActions(items.length > 0);
     var container = $('dashboard-cards');
     if (!items.length) {
       container.innerHTML = '<div class="empty-state">Нет закупок</div>';

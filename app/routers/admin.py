@@ -465,13 +465,13 @@ def track_conversion_usage(
     _user: User = Depends(get_admin_user),
 ) -> dict:
     """Record doc-to-md (Mistral OCR) usage from frontend calls."""
-    from ..usage_tracking import record_usage
+    from ..usage_tracking import record_usage, save_trace
 
     usage = payload.get("usage") or {}
     if not usage:
         return {"ok": False, "reason": "no usage data"}
 
-    record_usage(
+    usage_id = record_usage(
         channel="mistral_ocr",
         operation="pdf_conversion",
         model=usage.get("model"),
@@ -482,6 +482,20 @@ def track_conversion_usage(
         purchase_id=payload.get("purchase_id"),
         request_count=1,
     )
+
+    # Save a trace record so LLM Trace tab shows it as expandable
+    if usage_id:
+        pages = usage.get("pages_count")
+        summary = "Mistral OCR: model={}, pages={}, duration={}ms".format(
+            usage.get("model", "?"), pages or "?", usage.get("duration_ms", "?"),
+        )
+        save_trace(
+            usage_id=usage_id,
+            request_messages=[{"role": "system", "content": "PDF → Markdown conversion via Mistral OCR API"}],
+            response_content=summary,
+            duration_ms=usage.get("duration_ms"),
+        )
+
     return {"ok": True}
 
 

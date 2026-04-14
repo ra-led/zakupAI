@@ -35,7 +35,7 @@ services:
     ports:
       - "8000:8000"
 
-  etl:
+  etl-suppliers:
     build:
       context: .
       dockerfile: etl/Dockerfile
@@ -49,6 +49,22 @@ services:
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
       PERPLEXITY_MODEL: ${PERPLEXITY_MODEL}
       PERPLEXITY_MIN_CONTACTS: ${PERPLEXITY_MIN_CONTACTS}
+      WORKER_TASK_TYPES: supplier_search,supplier_search_perplexity
+    env_file: .env
+
+  etl-compare:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
+      WORKER_TASK_TYPES: lot_comparison
     env_file: .env
 
   frontend:

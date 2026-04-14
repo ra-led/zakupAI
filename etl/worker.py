@@ -3,6 +3,8 @@ import logging
 import os
 import time
 import math
+from concurrent.futures import ThreadPoolExecutor, Future
+from datetime import datetime
 from typing import Callable, Dict, List, Optional, Tuple
 
 from openai import OpenAI
@@ -24,6 +26,9 @@ logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(me
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = float(os.getenv("ETL_POLL_INTERVAL", "5"))
+MAX_WORKERS = int(os.getenv("ETL_MAX_WORKERS", "5"))
+
+ETL_TASK_TYPES = ["supplier_search", "supplier_search_perplexity", "lot_comparison"]
 
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OPENROUTER_EMBEDDING_MODEL = os.getenv("OPENROUTER_EMBEDDING_MODEL", "perplexity/pplx-embed-v1-4b")
@@ -908,6 +913,25 @@ def _write_progress(task_id: int, partial: Dict) -> None:
     logger.info("[progress] task=%s note=%r", task_id, partial.get("note"))
 
 
+def _process_task_safe(task: LLMTask) -> None:
+    """Thread-safe wrapper: catches all exceptions and marks task as failed."""
+    try:
+        _process_task(task)
+    except Exception as exc:
+        logger.exception("[etl] unhandled error in task %s", task.id)
+        try:
+            with Session(engine) as session:
+                t = session.get(LLMTask, task.id)
+                if t and t.status != "completed":
+                    t.status = "failed"
+                    t.output_text = json.dumps({"error": str(exc)}, ensure_ascii=False)
+                    t.updated_at = datetime.utcnow()
+                    session.add(t)
+                    session.commit()
+        except Exception:
+            logger.exception("[etl] failed to mark task %s as failed", task.id)
+
+
 def _process_task(task: LLMTask) -> None:
     if task.task_type == "lot_comparison":
         _process_lot_comparison_task(task)
@@ -992,9 +1016,7 @@ def _recover_stale_tasks() -> None:
         stale = session.exec(
             select(LLMTask).where(
                 LLMTask.status == "in_progress",
-                LLMTask.task_type.in_(
-                    ["supplier_search", "supplier_search_perplexity", "lot_comparison"]
-                ),
+                LLMTask.task_type.in_(ETL_TASK_TYPES),
             )
         ).all()
         for t in stale:
@@ -1035,35 +1057,89 @@ def _recover_stale_tasks() -> None:
             session.commit()
 
 
+def _claim_next_task(exclude_purchase_ids: set[int]) -> Optional[LLMTask]:
+    """Claim one queued task using SELECT FOR UPDATE SKIP LOCKED.
+
+    Fair scheduling: round-robin by purchase (user) — tasks from purchases
+    already being processed are deprioritised so one user's batch doesn't
+    block everyone else.
+    """
+    with Session(engine) as session:
+        # First try a task from a purchase NOT already in-flight
+        task = _try_claim(session, exclude_purchase_ids)
+        if task:
+            return task
+        # If all queued tasks belong to already-active purchases, take any
+        task = _try_claim(session, set())
+        return task
+
+
+def _try_claim(session: Session, exclude_purchase_ids: set[int]) -> Optional[LLMTask]:
+    """Attempt to claim a single queued task, optionally skipping certain purchases."""
+    query = (
+        select(LLMTask)
+        .where(
+            LLMTask.status == "queued",
+            LLMTask.task_type.in_(ETL_TASK_TYPES),
+        )
+    )
+    if exclude_purchase_ids:
+        query = query.where(LLMTask.purchase_id.notin_(exclude_purchase_ids))
+    query = query.order_by(LLMTask.created_at).limit(1)
+
+    # FOR UPDATE SKIP LOCKED prevents multiple threads from claiming the same task
+    query = query.with_for_update(skip_locked=True)
+
+    task = session.exec(query).first()
+    if not task:
+        return None
+
+    task.status = "in_progress"
+    task.updated_at = datetime.utcnow()
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
+
+
+def _get_active_purchase_ids(futures: dict[Future, int]) -> set[int]:
+    """Return purchase_ids of currently running tasks."""
+    return {pid for pid in futures.values() if pid is not None}
+
+
 def run_worker() -> None:
     create_db_and_tables()
-    logger.info("[etl] worker starting")
+    logger.info("[etl] worker starting (max_workers=%d)", MAX_WORKERS)
     _recover_stale_tasks()
+
+    executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
+    # Map: Future -> purchase_id (for fair scheduling)
+    futures: dict[Future, int] = {}
+
     while True:
-        with Session(engine) as session:
-            task = session.exec(
-                select(LLMTask)
-                .where(
-                    LLMTask.status == "queued",
-                    LLMTask.task_type.in_(["supplier_search", "supplier_search_perplexity", "lot_comparison"]),
-                )
-                .order_by(LLMTask.created_at)
-            ).first()
+        # Clean up completed futures
+        done = [f for f in futures if f.done()]
+        for f in done:
+            futures.pop(f)
+            exc = f.exception()
+            if exc:
+                logger.error("[etl] task thread raised: %s", exc)
 
-            if not task:
-                time.sleep(POLL_INTERVAL)
-                continue
+        # If pool is full, wait a bit
+        if len(futures) >= MAX_WORKERS:
+            time.sleep(POLL_INTERVAL)
+            continue
 
-            from datetime import datetime
-            task.status = "in_progress"
-            task.updated_at = datetime.utcnow()
-            session.add(task)
-            session.commit()
-            session.refresh(task)
-            task_id = task.id
+        active_purchases = _get_active_purchase_ids(futures)
+        task = _claim_next_task(active_purchases)
 
-        if task_id:
-            _process_task(task)
+        if not task:
+            time.sleep(POLL_INTERVAL)
+            continue
+
+        logger.info("[etl] dispatching task id=%s type=%s purchase=%s", task.id, task.task_type, task.purchase_id)
+        future = executor.submit(_process_task_safe, task)
+        futures[future] = task.purchase_id or 0
 
 
 def main() -> None:

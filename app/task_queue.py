@@ -1,6 +1,8 @@
 import json
+import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, Future
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -10,6 +12,9 @@ from sqlmodel import Session, select
 from .database import engine
 from .services.llm_tasks import build_search_queries, extract_bid_lots, extract_lots
 from .models import BidLot, BidLotParameter, LLMTask, Lot, LotParameter, Purchase
+
+EMBEDDED_MAX_WORKERS = int(os.getenv("EMBEDDED_MAX_WORKERS", "4"))
+EMBEDDED_TASK_TYPES = ["lots_extraction", "bid_lots_extraction"]
 
 
 @dataclass
@@ -227,9 +232,7 @@ class TaskQueue:
             stale = session.exec(
                 select(LLMTask).where(
                     LLMTask.status == "in_progress",
-                    LLMTask.task_type.in_(
-                        ["lots_extraction", "bid_lots_extraction"]
-                    ),
+                    LLMTask.task_type.in_(EMBEDDED_TASK_TYPES),
                 )
             ).all()
             for t in stale:
@@ -239,47 +242,50 @@ class TaskQueue:
             if stale:
                 session.commit()
 
-    def _run(self) -> None:
-        print("[task_queue] worker thread started")
-        self._recover_stale_tasks()
-        while not self._stop_event.is_set():
-            with Session(engine) as session:
-                task = session.exec(
-                    select(LLMTask)
-                    .where(
-                        LLMTask.status == "queued",
-                        LLMTask.task_type.in_(
-                            [
-                                "lots_extraction",
-                                "bid_lots_extraction",
-                            ]
-                        ),
-                    )
-                    .order_by(LLMTask.created_at)
-                ).first()
-                if not task:
-                    time.sleep(self.poll_interval)
-                    continue
+    def _claim_next_task(self, exclude_purchase_ids: set[int]) -> Optional[LLMTask]:
+        """Claim one queued task with FOR UPDATE SKIP LOCKED + fair scheduling."""
+        with Session(engine) as session:
+            task = self._try_claim(session, exclude_purchase_ids)
+            if task:
+                return task
+            return self._try_claim(session, set())
 
-                print(f"[task_queue] picked up task id={task.id} type={task.task_type}")
-                task.status = "in_progress"
-                session.add(task)
-                session.commit()
-                session.refresh(task)
-                task_id = task.id
+    @staticmethod
+    def _try_claim(session: Session, exclude_purchase_ids: set[int]) -> Optional[LLMTask]:
+        query = (
+            select(LLMTask)
+            .where(
+                LLMTask.status == "queued",
+                LLMTask.task_type.in_(EMBEDDED_TASK_TYPES),
+            )
+        )
+        if exclude_purchase_ids:
+            query = query.where(LLMTask.purchase_id.notin_(exclude_purchase_ids))
+        query = query.order_by(LLMTask.created_at).limit(1).with_for_update(skip_locked=True)
 
-            if task_id is None:
-                continue
+        task = session.exec(query).first()
+        if not task:
+            return None
 
+        task.status = "in_progress"
+        task.updated_at = datetime.utcnow()
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+        return task
+
+    def _process_task_safe(self, task_id: int) -> None:
+        """Thread-safe wrapper: catches all exceptions and marks task as failed."""
+        try:
+            self._process_task(task_id)
+        except Exception as exc:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[task_queue] task {task_id} crashed: {exc}\n{tb}")
             try:
-                self._process_task(task_id)
-            except Exception as exc:
-                import traceback
-                tb = traceback.format_exc()
-                print(f"[task_queue] task {task_id} crashed: {exc}\n{tb}")
                 with Session(engine) as session:
                     errored = session.get(LLMTask, task_id)
-                    if errored:
+                    if errored and errored.status != "completed":
                         errored.status = "failed"
                         errored.output_text = json.dumps(
                             {"error": str(exc), "traceback": tb[-1500:]},
@@ -287,6 +293,39 @@ class TaskQueue:
                         )
                         session.add(errored)
                         session.commit()
+            except Exception:
+                print(f"[task_queue] failed to mark task {task_id} as failed")
+
+    def _run(self) -> None:
+        print(f"[task_queue] worker thread started (max_workers={EMBEDDED_MAX_WORKERS})")
+        self._recover_stale_tasks()
+        executor = ThreadPoolExecutor(max_workers=EMBEDDED_MAX_WORKERS)
+        futures: dict[Future, int] = {}  # Future -> purchase_id
+
+        while not self._stop_event.is_set():
+            # Clean up completed futures
+            done = [f for f in futures if f.done()]
+            for f in done:
+                futures.pop(f)
+                exc = f.exception()
+                if exc:
+                    print(f"[task_queue] thread raised: {exc}")
+
+            if len(futures) >= EMBEDDED_MAX_WORKERS:
+                time.sleep(self.poll_interval)
+                continue
+
+            active_purchases = {pid for pid in futures.values() if pid is not None}
+            task = self._claim_next_task(active_purchases)
+
+            if not task:
+                time.sleep(self.poll_interval)
+                continue
+
+            task_id = task.id
+            print(f"[task_queue] dispatching task id={task_id} type={task.task_type} purchase={task.purchase_id}")
+            future = executor.submit(self._process_task_safe, task_id)
+            futures[future] = task.purchase_id or 0
 
     def _process_task(self, task_id: int) -> None:
         with Session(engine) as session:

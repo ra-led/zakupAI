@@ -268,8 +268,10 @@
       if (Array.isArray(files)) {
         var tzFile = files.find(function (f) { return f.file_type === 'tz'; });
         if (tzFile) {
+          currentPurchase.tz_filename = tzFile.filename;
           markTzUploadZone(tzFile.filename);
         } else {
+          currentPurchase.tz_filename = null;
           resetTzUploadZone();
         }
       }
@@ -428,6 +430,7 @@
       showMessage('Удаление ТЗ...');
       await API.apiFetch('/purchases/' + currentPurchase.id + '/tz', { method: 'DELETE' });
       currentPurchase.terms_text = null;
+      currentPurchase.tz_filename = null;
       resetTzUploadZone();
       updateComparisonZones();
       loadLots();
@@ -464,6 +467,7 @@
             body: { terms_text: newTerms },
           });
           currentPurchase.terms_text = newTerms;
+          currentPurchase.tz_filename = file.name;
           trackFile(currentPurchase.id, file.name, 'tz');
           showMessage('ТЗ загружено, обновляем лоты...');
           loadLots();
@@ -1220,23 +1224,20 @@
   }
 
   function updateComparisonZones() {
-    // ТЗ zone
+    // ТЗ — swap empty upload-zone for filled "loaded" card when ТЗ is present.
     var tzZone = $('comparison-tz-zone');
-    var tzHint = $('comparison-tz-hint');
-    if (currentPurchase && currentPurchase.terms_text) {
-      if (tzHint) {
-        tzHint.textContent = 'ТЗ загружено';
-        tzHint.style.color = 'var(--success)';
-        tzHint.style.fontWeight = '500';
+    var tzLoaded = $('comparison-tz-loaded');
+    var tzLoadedName = $('comparison-tz-loaded-name');
+    var hasTz = !!(currentPurchase && currentPurchase.terms_text);
+    if (hasTz) {
+      if (tzZone) tzZone.style.display = 'none';
+      if (tzLoaded) tzLoaded.classList.remove('hidden');
+      if (tzLoadedName) {
+        tzLoadedName.textContent = (currentPurchase && currentPurchase.tz_filename) || 'ТЗ загружено';
       }
-      if (tzZone) _addTzDeleteButton(tzZone);
     } else {
-      if (tzHint) {
-        tzHint.textContent = 'ТЗ не загружено';
-        tzHint.style.color = '';
-        tzHint.style.fontWeight = '';
-      }
-      if (tzZone) _removeTzDeleteButton(tzZone);
+      if (tzZone) tzZone.style.display = '';
+      if (tzLoaded) tzLoaded.classList.add('hidden');
     }
     // КП zone
     var kpHint = $('comparison-kp-hint');
@@ -1427,6 +1428,9 @@
       $('inp-comparison-tz-file').click();
     });
 
+    var compTzDel = $('btn-comparison-tz-delete');
+    if (compTzDel) compTzDel.addEventListener('click', function (e) { e.stopPropagation(); _handleTzDelete(); });
+
     $('inp-comparison-tz-file').addEventListener('change', async function () {
       var file = this.files[0];
       if (!file) return;
@@ -1446,6 +1450,8 @@
             body: { terms_text: newTerms },
           });
           currentPurchase.terms_text = newTerms;
+          currentPurchase.tz_filename = file.name;
+          markTzUploadZone(file.name);
           trackFile(currentPurchase.id, file.name, 'tz');
           showMessage('ТЗ загружено');
           updateComparisonZones();

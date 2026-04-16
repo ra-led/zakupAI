@@ -1405,6 +1405,86 @@ body {
   color: var(--text-secondary);
 }
 
+/* ===== TZ LOADED CARD (comparison tab) ===== */
+.tz-slot { position: relative; }
+
+.tz-loaded-card {
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  background: var(--accent-light);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.tz-loaded-card.hidden { display: none; }
+
+.tz-loaded-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: var(--shadow);
+}
+.tz-loaded-icon .material-symbols-outlined { font-size: 24px; }
+
+.tz-loaded-body { flex: 1; min-width: 0; }
+.tz-loaded-label {
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.tz-loaded-name {
+  font-size: var(--fs-card);
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tz-loaded-status {
+  font-size: var(--fs-micro);
+  color: var(--accent);
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tz-loaded-status .material-symbols-outlined {
+  font-size: 14px;
+  font-variation-settings: 'FILL' 1, 'wght' 500;
+}
+
+.tz-loaded-delete {
+  background: var(--card);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  padding: 6px 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  line-height: 1;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  transition: all .15s;
+}
+.tz-loaded-delete:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.tz-loaded-delete .material-symbols-outlined { font-size: 16px; }
+
 /* ===== UPLOAD ZONE ===== */
 .upload-zone {
   border: 2px dashed var(--outline-variant);

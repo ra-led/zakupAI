@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=20260416q">
+  <link rel="stylesheet" href="css/main.css?v=20260416r">
 </head>
 <body>
 
@@ -323,12 +323,25 @@
             </div>
             <div class="card-body">
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
-                <div class="upload-zone" id="comparison-tz-zone">
-                  <div class="icon"><span class="material-symbols-outlined">description</span></div>
-                  <div class="label">Техническое задание</div>
-                  <div class="hint" id="comparison-tz-hint">ТЗ не загружено</div>
-                  <div class="hint" style="color:var(--text-muted);font-size:11px;">pdf, xlsx, doc, docx, rtf, txt</div>
-                  <input type="file" id="inp-comparison-tz-file" accept=".pdf,.xlsx,.doc,.docx,.rtf,.txt" style="display:none">
+                <div class="tz-slot">
+                  <div class="upload-zone" id="comparison-tz-zone">
+                    <div class="icon"><span class="material-symbols-outlined">description</span></div>
+                    <div class="label">Техническое задание</div>
+                    <div class="hint" id="comparison-tz-hint">ТЗ не загружено</div>
+                    <div class="hint" style="color:var(--text-muted);font-size:11px;">pdf, xlsx, doc, docx, rtf, txt</div>
+                    <input type="file" id="inp-comparison-tz-file" accept=".pdf,.xlsx,.doc,.docx,.rtf,.txt" style="display:none">
+                  </div>
+                  <div class="tz-loaded-card hidden" id="comparison-tz-loaded">
+                    <div class="tz-loaded-icon"><span class="material-symbols-outlined">description</span></div>
+                    <div class="tz-loaded-body">
+                      <div class="tz-loaded-label">Техническое задание</div>
+                      <div class="tz-loaded-name" id="comparison-tz-loaded-name">—</div>
+                      <div class="tz-loaded-status"><span class="material-symbols-outlined">check_circle</span>ТЗ загружено и распознано</div>
+                    </div>
+                    <button type="button" class="tz-loaded-delete" id="btn-comparison-tz-delete" title="Удалить ТЗ">
+                      <span class="material-symbols-outlined">delete</span><span>Удалить</span>
+                    </button>
+                  </div>
                 </div>
                 <div class="upload-zone" id="comparison-kp-zone">
                   <div class="icon"><span class="material-symbols-outlined">upload_file</span></div>
@@ -667,10 +680,10 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/config.js?v=20260416q"></script>
-  <script src="js/api.js?v=20260416q"></script>
-  <script src="js/auth.js?v=20260416q"></script>
-  <script src="js/app.js?v=20260416q"></script>
+  <script src="js/config.js?v=20260416r"></script>
+  <script src="js/api.js?v=20260416r"></script>
+  <script src="js/auth.js?v=20260416r"></script>
+  <script src="js/app.js?v=20260416r"></script>
   <script>
     Auth.requireAuth();
     // Show admin sections + populate avatar initials

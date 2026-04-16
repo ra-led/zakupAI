@@ -104,6 +104,7 @@ def _ensure_regimecheckitem_columns() -> None:
     expected_columns = {
         "source_bid_id": "INTEGER",
         "source_supplier": "VARCHAR",
+        "localization_details": "TEXT",
     }
     with engine.begin() as conn:
         inspector = inspect(conn)

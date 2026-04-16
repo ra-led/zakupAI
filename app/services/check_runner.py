@@ -7,13 +7,14 @@ import logging
 import httpx
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 from sqlalchemy.orm import Session
 from sqlmodel import Session as SMSession
 from ..models import RegimeCheck, RegimeCheckItem
 from .file_parser import parse_supplier_file
 from ..database import engine
 from .gisp_checker import check_gisp_characteristics
-from .localization_checker import check_localization
+from .localization_checker import check_localization, should_check_rep_level
 from .report_generator import generate_report
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,40 @@ async def _check_registry_via_scraper(
         "okpd2_from_registry": okpd2,
         "localization_score": score,
     }
+
+
+async def _fetch_rep_level_via_scraper(
+    registry_number: str, client: httpx.AsyncClient,
+) -> Optional[str]:
+    """Fetch the РЭП level («Уровень N») for a registry number.
+
+    Returns None if the number isn't found in РЭП, the scraper is unreachable,
+    or the response has no level field. We never raise — REP enrichment is
+    best-effort, never blocks the main check.
+    """
+    if not registry_number or not registry_number.strip():
+        return None
+    import re
+    clean = re.sub(r"[^\d]", "", registry_number)
+    if not clean:
+        return None
+    try:
+        resp = await client.get(f"{GISP_SCRAPER_URL}/rep/{clean}", timeout=30.0)
+    except httpx.RequestError as exc:
+        logger.warning(f"[rep_level] scraper unavailable for {clean}: {exc}")
+        return None
+    if resp.status_code != 200:
+        return None
+    try:
+        data = resp.json()
+    except ValueError:
+        return None
+    if data.get("status") != "found_actual":
+        return None
+    record = data.get("active_record") or {}
+    level = record.get("product_level")
+    return str(level).strip() if level else None
+
 
 # In-memory progress store: check_id -> {total, processed, status, message, timings, stages}
 _progress: dict[int, dict] = {}
@@ -274,10 +309,26 @@ async def _process_items_into_check(
 
             # 2b. Localization check
             if reg_result["status"] in ("ok", "not_actual"):
-                loc_result = check_localization(okpd2_code, reg_result["localization_score"])
+                # REP level lookup — only when the dictionary says this OKPD2
+                # actually carries levels. Saves an HTTP call for the 98% of
+                # codes that don't.
+                rep_level: Optional[str] = None
+                if should_check_rep_level(okpd2_code):
+                    rep_level = await _fetch_rep_level_via_scraper(
+                        registry_number, http_client
+                    )
+                loc_result = check_localization(
+                    okpd2_code,
+                    reg_result["localization_score"],
+                    rep_level_observed=rep_level,
+                )
                 check_item.localization_status = loc_result.status
                 check_item.localization_actual_score = loc_result.actual_score
                 check_item.localization_required_score = loc_result.required_score
+                check_item.localization_details = (
+                    json.dumps(loc_result.details, ensure_ascii=False, default=str)
+                    if loc_result.details else None
+                )
             else:
                 check_item.localization_status = "skipped"
 
@@ -430,8 +481,11 @@ def _compute_overall(item: RegimeCheckItem) -> str:
         return "warning"
     if item.gisp_status == "mismatch" or item.localization_status == "insufficient":
         return "error"
+    # okpd_not_found = supplier didn't provide ОКПД2 at all — real gap
+    # score_missing = threshold exists but registry didn't return a score
     if item.gisp_status in ("warning", "gisp_unavailable") or item.localization_status in ("score_missing", "okpd_not_found"):
         return "warning"
+    # out_of_scope / advisory_min_share / ok → товар проходит
     return "ok"
 
 

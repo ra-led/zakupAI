@@ -71,6 +71,13 @@ logging.basicConfig(
 # ---------------------------------------------------------------------------
 
 PP719_API_URL = "https://gisp.gov.ru/pp719v2/pub/prod/b/"
+# РЭП (Реестр радиоэлектронной продукции) — undocumented, derived from the
+# ГИСП UI URL https://gisp.gov.ru/pp719v2/pub/prod/rep . Same JSON shape as
+# PP-719v2; carries an additional level field. If ГИСП moves it, override
+# via the REP_API_URL env var.
+REP_API_URL = os.getenv(
+    "REP_API_URL", "https://gisp.gov.ru/pp719v2/pub/prod/rep/b/"
+)
 CATALOG_URL_TEMPLATE = "https://gisp.gov.ru/goods/#/product/{product_id}"
 
 # Browser concurrency cap. Each headless Chromium ~250 MB peak.
@@ -115,6 +122,10 @@ class Pp719Record(BaseModel):
     is_pak: Optional[bool] = None
     product_gisp_url: Optional[str] = None
     product_gisp_id: Optional[str] = None  # extracted from product_gisp_url
+    # РЭП-only field: «Уровень 1» / «Уровень 2» / «Нет уровня». Always None
+    # for РРПП (PP-719) records. We expose it on the shared schema because
+    # both registries share the same row shape in ГИСП's response.
+    product_level: Optional[str] = None
 
 
 class Pp719LookupResponse(BaseModel):
@@ -169,15 +180,16 @@ def _extract_product_id(gisp_url: Optional[str]) -> Optional[str]:
     return m.group(1) if m else None
 
 
-def _fetch_pp719_records_sync(registry_number: str) -> List[Dict[str, Any]]:
-    """POST to the PP-719v2 grid endpoint via the stdlib urllib.
+def _fetch_registry_records_sync(api_url: str, registry_number: str) -> List[Dict[str, Any]]:
+    """POST to a ГИСП grid endpoint via the stdlib urllib.
 
-    Why urllib instead of httpx: empirically, httpx's POST against this
-    specific endpoint hangs forever on read inside the deployed container,
+    Used by both /pp719/ and /rep/ — the request shape is identical, only
+    the URL differs.
+
+    Why urllib instead of httpx: empirically, httpx's POST against ГИСП's
+    grid endpoints hangs forever on read inside the deployed container,
     while urllib's request returns in ~120 ms with the same headers and
-    body. We are not interested in chasing httpx's TLS/HTTP/transport
-    quirks for a single grid call — urllib is good enough and dependency-
-    free. We wrap this sync function with run_in_executor to keep FastAPI's
+    body. We wrap this sync function with run_in_executor to keep FastAPI's
     event loop unblocked.
     """
     payload = {
@@ -187,7 +199,7 @@ def _fetch_pp719_records_sync(registry_number: str) -> List[Dict[str, Any]]:
     }
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        PP719_API_URL,
+        api_url,
         data=body,
         headers=_REGISTRY_HEADERS,
         method="POST",
@@ -197,10 +209,10 @@ def _fetch_pp719_records_sync(registry_number: str) -> List[Dict[str, Any]]:
             status = resp.status
             raw = resp.read()
     except urllib.error.HTTPError as exc:
-        logger.warning("PP719 returned HTTP %s", exc.code)
+        logger.warning("Registry POST %s returned HTTP %s", api_url, exc.code)
         raise HTTPException(status_code=502, detail=f"GISP returned HTTP {exc.code}")
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        logger.warning("PP719 fetch failed: %s", exc)
+        logger.warning("Registry POST %s failed: %s", api_url, exc)
         raise HTTPException(status_code=503, detail=f"GISP unreachable: {exc}")
 
     if status != 200:
@@ -217,7 +229,16 @@ def _fetch_pp719_records_sync(registry_number: str) -> List[Dict[str, Any]]:
 
 async def _fetch_pp719_records(registry_number: str) -> List[Dict[str, Any]]:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _fetch_pp719_records_sync, registry_number)
+    return await loop.run_in_executor(
+        None, _fetch_registry_records_sync, PP719_API_URL, registry_number
+    )
+
+
+async def _fetch_rep_records(registry_number: str) -> List[Dict[str, Any]]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None, _fetch_registry_records_sync, REP_API_URL, registry_number
+    )
 
 
 def _select_active_record(
@@ -269,6 +290,28 @@ def _select_active_record(
     return "found_expired", best_expired, exact
 
 
+def _extract_product_level(raw: Dict[str, Any]) -> Optional[str]:
+    """Pull the РЭП level value out of the raw item dict.
+
+    Field name in ГИСП's response is undocumented. We probe the most likely
+    keys and accept any string value that looks like «Уровень N» or «Нет уровня».
+    """
+    for key in (
+        "product_level",
+        "rep_level",
+        "level",
+        "product_rep_level",
+        "rel_level_value",
+    ):
+        val = raw.get(key)
+        if val is None:
+            continue
+        s = str(val).strip()
+        if s:
+            return s
+    return None
+
+
 def _record_to_model(raw: Dict[str, Any]) -> Pp719Record:
     """Pluck the fields we publish out of the raw GISP item dict."""
     return Pp719Record(
@@ -294,6 +337,7 @@ def _record_to_model(raw: Dict[str, Any]) -> Pp719Record:
         is_pak=raw.get("is_pak"),
         product_gisp_url=raw.get("product_gisp_url"),
         product_gisp_id=_extract_product_id(raw.get("product_gisp_url")),
+        product_level=_extract_product_level(raw),
     )
 
 
@@ -550,6 +594,31 @@ async def lookup_pp719(registry_number: str) -> Pp719LookupResponse:
         raise HTTPException(status_code=400, detail="registry_number must contain digits")
 
     raw_items = await _fetch_pp719_records(clean)
+    status, active, exact_matches = _select_active_record(raw_items, clean)
+
+    return Pp719LookupResponse(
+        registry_number=clean,
+        status=status,
+        matched_count=len(exact_matches),
+        active_record=_record_to_model(active) if active else None,
+        all_records=[_record_to_model(it) for it in exact_matches],
+    )
+
+
+@app.get("/rep/{registry_number}", response_model=Pp719LookupResponse)
+async def lookup_rep(registry_number: str) -> Pp719LookupResponse:
+    """Look up an exact registry number in the РЭП (Реестр радиоэлектронной продукции).
+
+    Same response shape as /pp719 — the only meaningful difference for the
+    caller is that ``active_record.product_level`` is populated for РЭП
+    records (it stays None for РРПП). If ГИСП moved the РЭП endpoint, set
+    REP_API_URL env var.
+    """
+    clean = _normalize_registry_number(registry_number)
+    if not clean:
+        raise HTTPException(status_code=400, detail="registry_number must contain digits")
+
+    raw_items = await _fetch_rep_records(clean)
     status, active, exact_matches = _select_active_record(raw_items, clean)
 
     return Pp719LookupResponse(

@@ -228,6 +228,7 @@ class RegimeCheckItem(SQLModel, table=True):
     localization_status: Optional[str] = None
     localization_actual_score: Optional[float] = None
     localization_required_score: Optional[float] = None
+    localization_details: Optional[str] = None  # JSON dump of LocalizationResult.details
 
     # GISP characteristics check
     gisp_status: Optional[str] = None

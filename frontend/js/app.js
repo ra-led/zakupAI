@@ -2323,10 +2323,7 @@
       html += renderRegimeCheckCell('Реестр ПП №719', item.registry_status, item.registry_actual, item.registry_cert_end_date, item.registry_raw_url);
 
       // Column 3: Localization PP 1875
-      var locDetail = '';
-      if (item.localization_actual_score != null && item.localization_required_score != null) {
-        locDetail = item.localization_actual_score + ' из ' + item.localization_required_score + ' (мин.)';
-      }
+      var locDetail = _renderLocalizationDetail(item);
       html += renderRegimeCheckCellSimple('Баллы локализации', item.localization_status, locDetail);
 
       // Column 4: GISP — expandable comparison table
@@ -2349,10 +2346,69 @@
     return '<div class="' + cls + '"><div class="regime-check-label">' + icon + ' ' + escapeHtml(label) + '</div><div class="regime-check-value">' + detail + '</div></div>';
   }
 
+  function _renderLocalizationDetail(item) {
+    var primary = '';
+    if (item.localization_actual_score != null && item.localization_required_score != null) {
+      primary = item.localization_actual_score + ' из ' + item.localization_required_score + ' (мин.)';
+    } else if (item.localization_status === 'out_of_scope') {
+      primary = 'Нацрежим не применяется';
+    } else if (item.localization_status === 'advisory_min_share') {
+      primary = 'Мин. доля российских (инфо для заказчика)';
+    } else if (item.localization_status === 'ok' && item.localization_required_score == null) {
+      primary = 'Требования к баллам не установлены';
+    } else if (item.localization_status === 'score_missing' && item.localization_required_score != null) {
+      primary = 'Балл не указан, требуется ≥ ' + item.localization_required_score;
+    }
+    var det = null;
+    if (item.localization_details) {
+      try {
+        det = typeof item.localization_details === 'string' ? JSON.parse(item.localization_details) : item.localization_details;
+      } catch (e) { det = null; }
+    }
+    if (!det) return primary;
+    var lines = [];
+    if (primary) lines.push(primary);
+    if (det.pp1875) {
+      var label = det.pp1875.regime_label || det.pp1875.regime || '';
+      var pos = det.pp1875.position ? ' поз. ' + det.pp1875.position : '';
+      var inh = det.pp1875.inherited_from ? ' (от ' + det.pp1875.inherited_from + ')' : '';
+      if (label) lines.push('<small style="color:var(--text-secondary)">' + escapeHtml(label + pos + inh) + '</small>');
+      if (det.pp1875.all_regimes && det.pp1875.all_regimes.length > 1) {
+        var extras = det.pp1875.all_regimes.slice(1).map(function (r) {
+          var s = 'прил. ' + r.appendix;
+          if (r.min_share_percent != null) s += ', ' + r.min_share_percent + '%';
+          return s;
+        }).join('; ');
+        lines.push('<small style="color:var(--text-secondary)">+ также: ' + escapeHtml(extras) + '</small>');
+      }
+    }
+    if (det.pp719 && det.pp719.section) {
+      lines.push('<small style="color:var(--text-secondary)">' + escapeHtml(det.pp719.section) + '</small>');
+    }
+    if (det.upcoming_warning) {
+      lines.push('<small style="color:#d97706">С ' + escapeHtml(det.upcoming_warning.from) +
+                 ' порог вырастет до ' + det.upcoming_warning.min_score + '</small>');
+    }
+    if (det.rep_level) {
+      if (det.rep_level.this_product_level) {
+        lines.push('<small style="color:var(--text-secondary)">РЭП: товар — ' + escapeHtml(det.rep_level.this_product_level) + '</small>');
+      }
+      if (det.rep_level.applicable) {
+        var observed = det.rep_level.observed_levels || {};
+        var obsList = Object.keys(observed).map(function (k) { return k + ' (' + observed[k] + ')'; }).join(', ');
+        if (obsList) lines.push('<small style="color:var(--text-secondary)">РЭП: типично ' + escapeHtml(obsList) + '</small>');
+      }
+    }
+    if (det.reason && lines.length === 0) {
+      lines.push('<small style="color:var(--text-secondary)">' + escapeHtml(det.reason) + '</small>');
+    }
+    return lines.join('<br>');
+  }
+
   function renderRegimeCheckCellSimple(label, status, detail) {
     var cls = 'regime-check regime-unknown';
     var icon = '—';
-    if (status === 'ok') { cls = 'regime-check regime-pass'; icon = '✓'; }
+    if (status === 'ok' || status === 'out_of_scope' || status === 'advisory_min_share') { cls = 'regime-check regime-pass'; icon = '✓'; }
     else if (status === 'insufficient' || status === 'mismatch' || status === 'error') { cls = 'regime-check regime-fail'; icon = '✗'; }
     else if (status === 'warning' || status === 'wording') { cls = 'regime-check regime-unknown'; icon = '⚠'; }
     else if (status === 'not_found' || status === 'okpd_not_found' || status === 'score_missing') { cls = 'regime-check regime-unknown'; icon = '—'; }

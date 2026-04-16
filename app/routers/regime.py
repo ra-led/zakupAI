@@ -45,6 +45,7 @@ class RegimeCheckItemOut(BaseModel):
     localization_status: Optional[str] = None
     localization_actual_score: Optional[float] = None
     localization_required_score: Optional[float] = None
+    localization_details: Optional[str] = None
     gisp_status: Optional[str] = None
     gisp_characteristics: Optional[str] = None
     gisp_comparison: Optional[str] = None
@@ -217,6 +218,7 @@ def get_regime_check(
             "localization_status": item.localization_status,
             "localization_actual_score": item.localization_actual_score,
             "localization_required_score": item.localization_required_score,
+            "localization_details": item.localization_details,
             "gisp_status": item.gisp_status,
             "gisp_characteristics": item.gisp_characteristics,
             "gisp_comparison": item.gisp_comparison,

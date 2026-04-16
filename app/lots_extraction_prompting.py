@@ -42,7 +42,7 @@ class BidLotsExtractionResult(BaseModel):
 
 class ApplicationLotItem(LotItem):
     price: str = Field(...)
-    country_of_origin: str | None = Field(default=None)
+    country_of_origin: str | None = Field(...)
 
 
 class ApplicationLotsExtractionResult(BaseModel):

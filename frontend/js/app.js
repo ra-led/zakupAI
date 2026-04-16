@@ -2743,6 +2743,8 @@
 
   function renderDashboardCards(items) {
     _renderQuickActions(lastDashboardItems.length > 0);
+    var countEl = $('dashboard-section-count');
+    if (countEl) countEl.textContent = lastDashboardItems.length ? '· ' + lastDashboardItems.length : '';
     var container = $('dashboard-cards');
     if (!items.length) {
       container.innerHTML = '<div class="empty-state">' + (dashboardSearchQuery ? 'Ничего не найдено' : 'Нет закупок') + '</div>';
@@ -2881,12 +2883,26 @@
     var filterArchived = $('dashboard-filter-archived');
     var sortSel = $('dashboard-sort');
     var searchInp = $('dashboard-search-input');
+    var sectionToggle = $('dashboard-section-toggle');
     if (filterArchived) filterArchived.addEventListener('change', function () { loadDashboard(); });
     if (sortSel) sortSel.addEventListener('change', function () { loadDashboard(); });
     if (searchInp) searchInp.addEventListener('input', function () {
       dashboardSearchQuery = this.value.trim();
       renderDashboardCards(_filterDashboardItems(lastDashboardItems));
     });
+    if (sectionToggle) sectionToggle.addEventListener('click', function () {
+      var section = $('dashboard-section');
+      if (!section) return;
+      var collapsed = section.classList.toggle('collapsed');
+      try { localStorage.setItem('zakupai_dashboard_section_collapsed', collapsed ? '1' : '0'); } catch (_) {}
+    });
+    // Restore collapsed state from previous session
+    try {
+      if (localStorage.getItem('zakupai_dashboard_section_collapsed') === '1') {
+        var sec = $('dashboard-section');
+        if (sec) sec.classList.add('collapsed');
+      }
+    } catch (_) {}
   }
 
   function trackFile(purchaseId, filename, fileType) {

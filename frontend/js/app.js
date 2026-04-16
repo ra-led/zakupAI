@@ -450,11 +450,7 @@
       var file = this.files[0];
       if (!file || !currentPurchase) return;
 
-      var zone = $('tz-upload-zone');
-      zone.querySelector('.label').textContent = file.name;
-      zone.querySelector('.label').style.color = 'var(--text-primary)';
-      zone.querySelector('.label').style.fontWeight = '600';
-      zone.querySelector('.hint').style.display = 'none';
+      markTzUploadZone(file.name);
 
       try {
         showMessage('Конвертация документа...');

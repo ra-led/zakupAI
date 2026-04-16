@@ -10,8 +10,14 @@ scrape_configs:
 
   - job_name: etl_suppliers
     static_configs:
-      - targets: ["etl-suppliers:9101"]
+      - targets:
+          - "etl-suppliers:9101"
+          - "etl-suppliers-1:9101"
+          - "etl-suppliers-2:9102"
+          - "etl-suppliers-3:9103"
 
   - job_name: etl_compare
     static_configs:
-      - targets: ["etl-compare:9102"]
+      - targets:
+          - "etl-compare:9102"
+          - "etl-compare-1:9104"

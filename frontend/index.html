@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=20260416a">
+  <link rel="stylesheet" href="css/main.css?v=20260416b">
 </head>
 <body>
 
@@ -117,18 +117,20 @@
       <div class="tab-content active" id="tab-dashboard">
         <!-- Quick actions -->
         <div id="dashboard-quick-actions"></div>
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-            <select id="dashboard-filter-archived" class="form-input" style="width:auto">
-              <option value="false">Активные</option>
-              <option value="true">Архивные</option>
-              <option value="">Все</option>
-            </select>
-            <select id="dashboard-sort" class="form-input" style="width:auto">
-              <option value="created_at_desc">Сначала новые</option>
-              <option value="created_at_asc">Сначала старые</option>
-              <option value="updated_at_desc">Недавно обновлённые</option>
-            </select>
+        <div class="dashboard-filter-bar">
+          <select id="dashboard-filter-archived" class="dashboard-select">
+            <option value="false">Активные</option>
+            <option value="true">Архивные</option>
+            <option value="">Все</option>
+          </select>
+          <select id="dashboard-sort" class="dashboard-select">
+            <option value="created_at_desc">Сначала новые</option>
+            <option value="created_at_asc">Сначала старые</option>
+            <option value="updated_at_desc">Недавно обновлённые</option>
+          </select>
+          <div class="dashboard-search">
+            <span class="material-symbols-outlined">search</span>
+            <input id="dashboard-search-input" type="text" placeholder="Поиск закупок..." autocomplete="off">
           </div>
         </div>
         <div id="dashboard-cards">
@@ -656,10 +658,10 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/config.js?v=20260416a"></script>
-  <script src="js/api.js?v=20260416a"></script>
-  <script src="js/auth.js?v=20260416a"></script>
-  <script src="js/app.js?v=20260416a"></script>
+  <script src="js/config.js?v=20260416b"></script>
+  <script src="js/api.js?v=20260416b"></script>
+  <script src="js/auth.js?v=20260416b"></script>
+  <script src="js/app.js?v=20260416b"></script>
   <script>
     Auth.requireAuth();
     // Show admin sections + populate avatar initials

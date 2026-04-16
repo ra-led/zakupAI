@@ -322,22 +322,23 @@
     if (!el) return;
 
     var actions = [
-      { tab: 'search', icon: '&#128270;', title: 'Найти поставщиков', desc: 'Загрузите ТЗ — AI найдёт подходящих поставщиков' },
-      { tab: 'comparison', icon: '&#9878;', title: 'Сравнить КП с ТЗ', desc: 'Загрузите ТЗ и КП — AI сравнит характеристики' },
-      { tab: 'regime', icon: '&#127479;&#127482;', title: 'Проверить нацрежим', desc: 'Загрузите КП — проверка по ПП №1875 и реестру' },
+      { tab: 'search', icon: 'person_search', title: 'Найти поставщиков', desc: 'Загрузите ТЗ — AI найдёт подходящих' },
+      { tab: 'comparison', icon: 'rule_folder', title: 'Сравнить КП с ТЗ', desc: 'ТЗ и КП — AI сравнит характеристики' },
+      { tab: 'regime', icon: 'verified_user', title: 'Проверить нацрежим', desc: 'Проверка по ПП №1875 и реестру' },
     ];
 
-    var compact = hasPurchases ? ' quick-actions-compact' : '';
-    var html = '<div class="quick-actions' + compact + '">';
+    var variant = hasPurchases ? '' : ' quick-actions-empty';
+    var html = '<div class="quick-actions' + variant + '">';
     if (!hasPurchases) html += '<div class="quick-actions-title">Что вы хотите проверить?</div>';
     html += '<div class="quick-actions-grid">';
     for (var i = 0; i < actions.length; i++) {
       var a = actions[i];
       html += '<div class="quick-action-card" onclick="window._quickCreatePurchase(\'' + a.tab + '\')">';
-      html += '<div class="quick-action-icon">' + a.icon + '</div>';
-      html += '<div><div class="quick-action-title">' + a.title + '</div>';
-      html += '<div class="quick-action-desc">' + a.desc + '</div></div>';
-      html += '</div>';
+      html += '<div class="quick-action-icon"><span class="material-symbols-outlined">' + a.icon + '</span></div>';
+      html += '<div class="quick-action-body">';
+      html += '<div class="quick-action-title">' + a.title + '</div>';
+      html += '<div class="quick-action-desc">' + a.desc + '</div>';
+      html += '</div></div>';
     }
     html += '</div></div>';
     el.innerHTML = html;
@@ -2525,6 +2526,9 @@
 
   // ── Dashboard ────────────────────────────────────────────────────
 
+  var lastDashboardItems = [];
+  var dashboardSearchQuery = '';
+
   async function loadDashboard() {
     var archivedSel = $('dashboard-filter-archived');
     var sortSel = $('dashboard-sort');
@@ -2539,17 +2543,27 @@
 
     try {
       var data = await API.apiFetch('/purchases/dashboard?' + params.join('&'));
-      renderDashboardCards(data || []);
+      lastDashboardItems = data || [];
+      renderDashboardCards(_filterDashboardItems(lastDashboardItems));
     } catch (e) {
       $('dashboard-cards').innerHTML = '<div class="empty-state">Ошибка загрузки: ' + escapeHtml(e.message) + '</div>';
     }
   }
 
+  function _filterDashboardItems(items) {
+    if (!dashboardSearchQuery) return items;
+    var q = dashboardSearchQuery.toLowerCase();
+    return items.filter(function (p) {
+      var name = ((p.custom_name || p.full_name || '') + '').toLowerCase();
+      return name.indexOf(q) !== -1;
+    });
+  }
+
   function renderDashboardCards(items) {
-    _renderQuickActions(items.length > 0);
+    _renderQuickActions(lastDashboardItems.length > 0);
     var container = $('dashboard-cards');
     if (!items.length) {
-      container.innerHTML = '<div class="empty-state">Нет закупок</div>';
+      container.innerHTML = '<div class="empty-state">' + (dashboardSearchQuery ? 'Ничего не найдено' : 'Нет закупок') + '</div>';
       return;
     }
 
@@ -2561,6 +2575,7 @@
     };
 
     var fileTypeLabels = { tz: 'ТЗ', kp: 'КП', regime_kp: 'КП (нацрежим)' };
+    var fileTypeIcons = { tz: 'description', kp: 'table_chart', regime_kp: 'verified' };
 
     var html = '';
     for (var i = 0; i < items.length; i++) {
@@ -2568,20 +2583,23 @@
       var name = escapeHtml(p.custom_name || p.full_name || 'Закупка #' + p.auto_number);
       var date = new Date(p.created_at).toLocaleDateString('ru-RU');
       var archivedClass = p.is_archived ? ' archived' : '';
+      var badgeLabel = p.is_archived ? 'Архив' : 'Активна';
+      var badgeClass = p.is_archived ? ' archived' : '';
 
-      // Progress dots
+      // Module dots
       var progressHtml = '';
       var keys = ['search_status', 'correspondence_status', 'comparison_status', 'regime_check_status'];
       for (var m = 0; m < keys.length; m++) {
         var st = p[keys[m]] || 'not_started';
-        progressHtml += '<div class="dashboard-module"><span class="module-dot ' + st + '"></span>' + moduleLabels[keys[m]] + '</div>';
+        var mutedCls = (st === 'not_started') ? ' muted' : '';
+        progressHtml += '<div class="dashboard-module' + mutedCls + '"><span class="module-dot ' + st + '"></span>' + moduleLabels[keys[m]] + '</div>';
       }
 
       // Metrics
       var metricsHtml =
-        '<span class="dashboard-metric"><b>' + p.lots_count + '</b> лотов</span>' +
-        '<span class="dashboard-metric"><b>' + p.suppliers_count + '</b> поставщиков</span>' +
-        '<span class="dashboard-metric"><b>' + p.bids_count + '</b> КП</span>';
+        '<span><b>' + p.lots_count + '</b>лотов</span>' +
+        '<span><b>' + p.suppliers_count + '</b>поставщ.</span>' +
+        '<span><b>' + p.bids_count + '</b>КП</span>';
 
       // Files
       var filesHtml = '';
@@ -2589,22 +2607,39 @@
         for (var f = 0; f < p.files.length; f++) {
           var fl = p.files[f];
           var typeLabel = fileTypeLabels[fl.file_type] || fl.file_type;
-          filesHtml += '<span class="dashboard-file-chip">' + typeLabel + ': ' + escapeHtml(fl.filename) + '</span>';
+          var typeIcon = fileTypeIcons[fl.file_type] || 'draft';
+          var fname = escapeHtml(fl.filename);
+          filesHtml += '<span class="dashboard-file-chip" title="' + typeLabel + ': ' + fname + '">';
+          filesHtml += '<span class="material-symbols-outlined">' + typeIcon + '</span>';
+          filesHtml += '<b>' + typeLabel + ':</b>' + fname;
+          filesHtml += '</span>';
         }
       }
 
       var archiveBtnLabel = p.is_archived ? 'Восстановить' : 'В архив';
       var archiveBtnNewState = p.is_archived ? 'false' : 'true';
 
-      html += '<div class="dashboard-card' + archivedClass + '">' +
-        '<div class="dashboard-card-header"><div class="dashboard-card-name">' + name + '</div><div class="dashboard-card-date">' + date + '</div></div>' +
-        '<div class="dashboard-progress">' + progressHtml + '</div>' +
-        '<div class="dashboard-metrics">' + metricsHtml + '</div>' +
-        (filesHtml ? '<div class="dashboard-files">' + filesHtml + '</div>' : '') +
-        '<div class="dashboard-actions">' +
-        '<button class="btn btn-sm btn-secondary btn-archive-purchase" data-pid="' + p.id + '" data-archive="' + archiveBtnNewState + '">' + archiveBtnLabel + '</button>' +
-        '<button class="btn btn-sm btn-primary btn-open-purchase" data-pid="' + p.id + '">Открыть</button>' +
-        '</div></div>';
+      html += '<div class="dashboard-card' + archivedClass + '">';
+      html +=   '<div class="dashboard-card-head">';
+      html +=     '<div class="dashboard-card-head-left">';
+      html +=       '<div class="dashboard-card-name" title="' + name + '">' + name + '</div>';
+      html +=       '<span class="dashboard-status-badge' + badgeClass + '">' + badgeLabel + '</span>';
+      html +=       '<div class="dashboard-card-date">' + date + '</div>';
+      html +=     '</div>';
+      html +=     '<div class="dashboard-card-actions">';
+      html +=       '<button class="btn btn-sm btn-secondary btn-archive-purchase" data-pid="' + p.id + '" data-archive="' + archiveBtnNewState + '">' + archiveBtnLabel + '</button>';
+      html +=       '<button class="btn btn-sm btn-primary btn-open-purchase" data-pid="' + p.id + '">Открыть</button>';
+      html +=     '</div>';
+      html +=   '</div>';
+      html +=   '<div class="dashboard-card-body">';
+      html +=     '<div class="dashboard-card-body-left">';
+      html +=       '<div class="dashboard-progress">' + progressHtml + '</div>';
+      html +=       '<div class="dashboard-card-divider"></div>';
+      html +=       '<div class="dashboard-metrics">' + metricsHtml + '</div>';
+      html +=     '</div>';
+      if (filesHtml) html += '<div class="dashboard-files">' + filesHtml + '</div>';
+      html +=   '</div>';
+      html += '</div>';
     }
     container.innerHTML = html;
 
@@ -2648,8 +2683,13 @@
   function initDashboard() {
     var filterArchived = $('dashboard-filter-archived');
     var sortSel = $('dashboard-sort');
+    var searchInp = $('dashboard-search-input');
     if (filterArchived) filterArchived.addEventListener('change', function () { loadDashboard(); });
     if (sortSel) sortSel.addEventListener('change', function () { loadDashboard(); });
+    if (searchInp) searchInp.addEventListener('input', function () {
+      dashboardSearchQuery = this.value.trim();
+      renderDashboardCards(_filterDashboardItems(lastDashboardItems));
+    });
   }
 
   function trackFile(purchaseId, filename, fileType) {

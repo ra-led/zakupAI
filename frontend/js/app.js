@@ -139,6 +139,7 @@
         if (panel) panel.classList.add('active');
         if (tabId === 'dashboard') loadDashboard();
         if (tabId === 'llm-trace') _searchTracePurchases($('trace-purchase-search') ? $('trace-purchase-search').value : '');
+        if ((tabId === 'comparison' || tabId === 'regime' || tabId === 'correspondence') && currentPurchase) loadBids();
       });
     }
   }
@@ -1125,6 +1126,7 @@
       currentBids = await API.apiFetch('/purchases/' + currentPurchase.id + '/bids');
       renderBids();
       renderBidSelector();
+      renderRegimeBids();
       renderCorrespondenceSuppliers();
       populateBidSupplierDropdown();
       // Update badge

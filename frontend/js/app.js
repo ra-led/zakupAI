@@ -261,12 +261,16 @@
         currentPurchase = Object.assign({}, currentPurchase, full);
       }
     } catch (_) { /* fallback to dashboard data */ }
-    // Reflect already-uploaded TZ filename in the upload zone
+    // Reflect already-uploaded TZ filename in the upload zone + chip
     try {
       var files = await API.apiFetch('/purchases/' + purchase.id + '/files');
       if (Array.isArray(files)) {
         var tzFile = files.find(function (f) { return f.file_type === 'tz'; });
-        if (tzFile) markTzUploadZone(tzFile.filename);
+        if (tzFile) {
+          markTzUploadZone(tzFile.filename);
+        } else {
+          resetTzUploadZone();
+        }
       }
     } catch (_) { /* non-critical */ }
     // Load all data
@@ -354,30 +358,45 @@
 
   function markTzUploadZone(filename) {
     var zone = $('tz-upload-zone');
-    if (!zone) return;
-    var label = zone.querySelector('.label');
-    var hint = zone.querySelector('.hint');
-    if (label) {
-      label.textContent = filename;
-      label.style.color = 'var(--text-primary)';
-      label.style.fontWeight = '600';
+    if (zone) {
+      var label = zone.querySelector('.label');
+      var hint = zone.querySelector('.hint');
+      if (label) {
+        label.textContent = filename;
+        label.style.color = 'var(--text-primary)';
+        label.style.fontWeight = '600';
+      }
+      if (hint) hint.style.display = 'none';
     }
-    if (hint) hint.style.display = 'none';
-    _addTzDeleteButton(zone);
+    _showTzChip(filename);
   }
 
   function resetTzUploadZone() {
     var zone = $('tz-upload-zone');
-    if (!zone) return;
-    var label = zone.querySelector('.label');
-    var hint = zone.querySelector('.hint');
-    if (label) {
-      label.textContent = 'Загрузить ТЗ';
-      label.style.color = '';
-      label.style.fontWeight = '';
+    if (zone) {
+      var label = zone.querySelector('.label');
+      var hint = zone.querySelector('.hint');
+      if (label) {
+        label.textContent = 'Загрузить ТЗ';
+        label.style.color = '';
+        label.style.fontWeight = '';
+      }
+      if (hint) hint.style.display = '';
     }
-    if (hint) hint.style.display = '';
-    _removeTzDeleteButton(zone);
+    _hideTzChip();
+  }
+
+  function _showTzChip(filename) {
+    var chip = $('tz-chip');
+    var nameEl = $('tz-chip-name');
+    if (!chip || !nameEl) return;
+    nameEl.textContent = filename;
+    chip.classList.remove('hidden');
+  }
+
+  function _hideTzChip() {
+    var chip = $('tz-chip');
+    if (chip) chip.classList.add('hidden');
   }
 
   function _addTzDeleteButton(zone) {
@@ -423,6 +442,9 @@
     $('tz-upload-zone').addEventListener('click', function () {
       $('inp-tz-file').click();
     });
+
+    var chipDel = $('btn-tz-chip-delete');
+    if (chipDel) chipDel.addEventListener('click', function (e) { e.stopPropagation(); _handleTzDelete(); });
 
     $('inp-tz-file').addEventListener('change', async function () {
       var file = this.files[0];

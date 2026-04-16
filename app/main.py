@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 from datetime import datetime, timedelta
@@ -7,6 +8,9 @@ from urllib.parse import urlparse
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select, func, col
+from sqlalchemy import delete as sa_delete
+
+logger = logging.getLogger(__name__)
 
 from io import BytesIO
 
@@ -1002,25 +1006,31 @@ def delete_tz(
     if not purchase or purchase.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
 
-    lots = session.exec(select(Lot).where(Lot.purchase_id == purchase_id)).all()
-    for lot in lots:
-        params = session.exec(select(LotParameter).where(LotParameter.lot_id == lot.id)).all()
-        for p in params:
-            session.delete(p)
-        session.delete(lot)
+    try:
+        lot_rows = session.exec(select(Lot).where(Lot.purchase_id == purchase_id)).all()
+        lot_ids = [l.id for l in lot_rows if l.id is not None]
+        if lot_ids:
+            # Two bulk deletes — skip the per-row ORM flush ordering that can
+            # surprise us when a parent is deleted while a child mapping is
+            # still live in the session.
+            session.exec(sa_delete(LotParameter).where(col(LotParameter.lot_id).in_(lot_ids)))
+            session.exec(sa_delete(Lot).where(col(Lot.id).in_(lot_ids)))
 
-    tz_files = session.exec(
-        select(PurchaseFile).where(
-            PurchaseFile.purchase_id == purchase_id, PurchaseFile.file_type == "tz"
+        session.exec(
+            sa_delete(PurchaseFile).where(
+                PurchaseFile.purchase_id == purchase_id,
+                PurchaseFile.file_type == "tz",
+            )
         )
-    ).all()
-    for f in tz_files:
-        session.delete(f)
 
-    purchase.terms_text = None
-    purchase.updated_at = datetime.utcnow()
-    session.add(purchase)
-    session.commit()
+        purchase.terms_text = None
+        purchase.updated_at = datetime.utcnow()
+        session.add(purchase)
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        logger.exception("delete_tz failed for purchase %s", purchase_id)
+        raise HTTPException(status_code=500, detail=f"delete_tz: {type(exc).__name__}: {exc}")
 
 
 @app.post("/purchases/{purchase_id}/bids/{bid_id}/comparison", response_model=LotComparisonResponse)

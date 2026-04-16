@@ -703,6 +703,48 @@ body {
 /* ===== LOTS PANEL (left) ===== */
 .lots-panel .card-body { padding: 12px; }
 
+/* TZ chip — shows loaded ТЗ filename inside Lots panel, with delete button */
+.tz-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: var(--accent-light);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-small);
+  color: var(--text);
+}
+.tz-chip.hidden { display: none; }
+.tz-chip .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.tz-chip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.tz-chip-delete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 8px;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: all .15s;
+}
+.tz-chip-delete:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
 .lot-item {
   padding: 10px 12px;
   border: 1px solid var(--border);

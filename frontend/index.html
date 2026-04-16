@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=20260416k">
+  <link rel="stylesheet" href="css/main.css?v=20260416l">
 </head>
 <body>
 
@@ -152,6 +152,11 @@
                 </div>
               </div>
               <div class="card-body">
+                <div id="tz-chip" class="tz-chip hidden">
+                  <span class="material-symbols-outlined">description</span>
+                  <span class="tz-chip-name" id="tz-chip-name"></span>
+                  <button type="button" class="tz-chip-delete" id="btn-tz-chip-delete" title="Удалить ТЗ">&times;</button>
+                </div>
                 <div id="lots-container">
                   <div class="empty-state">Загрузите ТЗ или добавьте лоты вручную</div>
                 </div>
@@ -648,10 +653,10 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/config.js?v=20260416k"></script>
-  <script src="js/api.js?v=20260416k"></script>
-  <script src="js/auth.js?v=20260416k"></script>
-  <script src="js/app.js?v=20260416k"></script>
+  <script src="js/config.js?v=20260416l"></script>
+  <script src="js/api.js?v=20260416l"></script>
+  <script src="js/auth.js?v=20260416l"></script>
+  <script src="js/app.js?v=20260416l"></script>
   <script>
     Auth.requireAuth();
     // Show admin sections + populate avatar initials

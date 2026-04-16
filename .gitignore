@@ -16,6 +16,8 @@ npm-debug.log*
 /anthem-preview.html
 /anthem-v2-preview.html
 /frontend-preview.html
+/dashboard-layout-options.html
+/comparison-tz-loaded-options.html
 /PRD_frontend_v3.md
 
 # Heavy source PDFs kept locally for regenerating pp_requirements — not needed in repo

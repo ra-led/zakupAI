@@ -1406,7 +1406,17 @@ body {
 }
 
 /* ===== TZ LOADED CARD (comparison tab) ===== */
-.tz-slot { position: relative; }
+/* minmax(0, 1fr) forces each cell to yield to the parent width — otherwise a
+   long filename inside tz-loaded-name pushes its grid column past 50% and
+   squashes the КП zone. */
+.comparison-zones-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.tz-slot { position: relative; min-width: 0; }
 
 .tz-loaded-card {
   border: 1px solid var(--accent);

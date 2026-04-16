@@ -1671,6 +1671,32 @@ body {
   box-shadow: 0 24px 64px rgba(3, 7, 29, 0.24);
 }
 
+.modal.modal-wide {
+  width: 760px;
+}
+
+/* Lot detail: let the "Параметр" column grow, but the other two stay compact so
+   long parameter names don't get cramped. */
+.lot-detail-table {
+  table-layout: auto;
+}
+.lot-detail-table th:nth-child(1),
+.lot-detail-table td:nth-child(1) {
+  width: 40%;
+  white-space: normal;
+}
+.lot-detail-table th:nth-child(2),
+.lot-detail-table td:nth-child(2) {
+  width: 45%;
+  white-space: normal;
+  word-break: break-word;
+}
+.lot-detail-table th:nth-child(3),
+.lot-detail-table td:nth-child(3) {
+  width: 15%;
+  white-space: nowrap;
+}
+
 .modal-header {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);

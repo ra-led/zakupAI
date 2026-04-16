@@ -976,6 +976,12 @@ def delete_bid(
         for p in params:
             session.delete(p)
         session.delete(lot)
+    # LLMTask.bid_id is a nullable FK — detach instead of deleting so trace
+    # history survives the bid removal.
+    tasks = session.exec(select(LLMTask).where(LLMTask.bid_id == bid_id)).all()
+    for t in tasks:
+        t.bid_id = None
+        session.add(t)
     session.delete(bid)
     session.commit()
 

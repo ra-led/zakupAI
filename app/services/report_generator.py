@@ -85,6 +85,7 @@ STATUS_LABELS = {
     "not_found": "Не найден в реестре",
     "registry_error": "Реестр недоступен",
     "mismatch": "Несоответствие",
+    "wrong_registry_suspected": "Возможно неверный реестровый номер",
     "warning": "Предупреждение",
     "insufficient": "Недостаточно баллов",
     "okpd_not_found": "ОКПД 2 не указан",

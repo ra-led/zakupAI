@@ -2401,7 +2401,7 @@
     if (det.pp1875) {
       var label = det.pp1875.regime_label || det.pp1875.regime || '';
       var pos = det.pp1875.position ? ' поз. ' + det.pp1875.position : '';
-      var inh = det.pp1875.inherited_from ? ' (от ' + det.pp1875.inherited_from + ')' : '';
+      var inh = det.pp1875.inherited_from ? ' (наследует от ОКПД2 ' + det.pp1875.inherited_from + ')' : '';
       if (label) lines.push('<small style="color:var(--text-secondary)">' + escapeHtml(label + pos + inh) + '</small>');
       if (det.pp1875.all_regimes && det.pp1875.all_regimes.length > 1) {
         var extras = det.pp1875.all_regimes.slice(1).map(function (r) {
@@ -2450,7 +2450,7 @@
     var cls = 'regime-check regime-unknown';
     var icon = '—';
     if (status === 'ok') { cls = 'regime-check regime-pass'; icon = '✓'; }
-    else if (status === 'mismatch' || status === 'error') { cls = 'regime-check regime-fail'; icon = '✗'; }
+    else if (status === 'mismatch' || status === 'wrong_registry_suspected' || status === 'error') { cls = 'regime-check regime-fail'; icon = '✗'; }
     else if (status === 'warning' || status === 'wording') { cls = 'regime-check regime-unknown'; icon = '⚠'; }
 
     var comparison = null;
@@ -2466,6 +2466,7 @@
     html += '</div>';
     html += '<div class="regime-check-value">';
     if (status === 'ok') html += 'Характеристики совпадают';
+    else if (status === 'wrong_registry_suspected') html += 'Вероятно неверный реестровый номер';
     else if (status === 'mismatch') html += 'Несоответствие характеристик';
     else if (status === 'warning') html += 'Требует внимания';
     else if (status === 'skipped') html += 'Пропущено (нет данных реестра)';

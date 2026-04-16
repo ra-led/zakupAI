@@ -60,19 +60,24 @@ async def _check_registry_via_scraper(
 
     if scraper_status == "not_found":
         return {"status": "not_found", "is_actual": None, "cert_end_date": None,
-                "url": None, "okpd2_from_registry": None, "localization_score": None}
+                "url": None, "okpd2_from_registry": None, "localization_score": None,
+                "registry_product_name": None}
 
-    record = data.get("record") or {}
+    record = data.get("active_record") or {}
     is_actual = scraper_status == "found_actual"
     cert_end = record.get("res_valid_till") or record.get("res_end_date")
-    okpd2 = record.get("product_okpd2_code")
+    okpd2 = record.get("product_okpd2")
     score = None
-    try:
-        score = float(record.get("res_score") or 0)
-    except (ValueError, TypeError):
-        pass
-    product_id = record.get("id") or record.get("product_id")
-    reg_url = f"https://gisp.gov.ru/pp719v2/pub/prod/{product_id}/" if product_id else None
+    raw_score = record.get("product_score_value")
+    if raw_score is not None:
+        try:
+            score = float(raw_score)
+        except (ValueError, TypeError):
+            pass
+    product_id = record.get("product_gisp_id")
+    reg_url = record.get("product_gisp_url") or (
+        f"https://gisp.gov.ru/pp719v2/pub/prod/{product_id}/" if product_id else None
+    )
 
     return {
         "status": "ok" if is_actual else "not_actual",
@@ -81,6 +86,7 @@ async def _check_registry_via_scraper(
         "url": reg_url,
         "okpd2_from_registry": okpd2,
         "localization_score": score,
+        "registry_product_name": record.get("product_name"),
     }
 
 
@@ -479,7 +485,7 @@ def _compute_overall(item: RegimeCheckItem) -> str:
         return "not_found"
     if item.registry_status == "not_actual":
         return "warning"
-    if item.gisp_status == "mismatch" or item.localization_status == "insufficient":
+    if item.gisp_status in ("mismatch", "wrong_registry_suspected") or item.localization_status == "insufficient":
         return "error"
     # okpd_not_found = supplier didn't provide ОКПД2 at all — real gap
     # score_missing = threshold exists but registry didn't return a score

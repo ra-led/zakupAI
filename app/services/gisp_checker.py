@@ -70,14 +70,20 @@ class GispResult:
     Status semantics (intentionally a subset of what check_runner._compute_overall
     already understands, so we don't have to touch its rollup logic):
 
-        ok               — every supplier characteristic agrees with GISP
-        warning          — wording/missing_in_gisp issues OR registry entry is
-                           expired (the scraper saw found_expired even though
-                           the local snapshot still considered it active)
-        mismatch         — at least one numeric/material disagreement
-        not_found        — registry number is not in PP-719v2 (or no exact match)
-        gisp_unavailable — scraper or upstream GISP is down; check inconclusive
-        skipped          — supplier didn't provide characteristics; nothing to compare
+        ok                         — every supplier characteristic agrees with GISP
+        warning                    — wording/missing_in_gisp issues OR registry entry
+                                     is expired (the scraper saw found_expired even
+                                     though the local snapshot still considered it
+                                     active)
+        mismatch                   — at least one numeric/material disagreement
+        wrong_registry_suspected   — 3+ characteristics compared and fewer than ~15%
+                                     agreed: the КП is almost certainly quoting a
+                                     registry number that belongs to a different
+                                     product (typo, copy-paste from another item)
+        not_found                  — registry number is not in PP-719v2 (or no exact match)
+        gisp_unavailable           — scraper or upstream GISP is down; check inconclusive
+        skipped                    — supplier didn't provide characteristics; nothing
+                                     to compare
     """
 
     status: str
@@ -85,6 +91,7 @@ class GispResult:
     comparison: list[dict] = field(default_factory=list)
     gisp_url: Optional[str] = None
     product_id: Optional[str] = None
+    gisp_product_name: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +132,7 @@ async def check_gisp_characteristics(
         active = lookup.get("active_record") or {}
         gisp_url = active.get("product_gisp_url")
         product_id = active.get("product_gisp_id")
+        gisp_product_name = active.get("product_name")
 
         if lookup.get("status") == "found_expired":
             # Registry entry exists but is no longer in force. The local
@@ -195,12 +203,25 @@ async def check_gisp_characteristics(
             product_name=product_name,
         )
 
+        status = _rollup(comparison)
+        # Heuristic: if we compared at least 3 characteristics and fewer than
+        # ~15% of them agreed, the registry number likely points at a completely
+        # different product (the classic case: supplier put a thermal-insulation
+        # registry number on a PC). Promote status so the UI can call it out
+        # instead of burying the signal in "несоответствие характеристик".
+        if _looks_like_wrong_registry(comparison):
+            status = "wrong_registry_suspected"
+            comparison = _prepend_wrong_registry_note(
+                comparison, product_name, gisp_product_name
+            )
+
         return GispResult(
-            status=_rollup(comparison),
+            status=status,
             gisp_characteristics=gisp_chars,
             comparison=comparison,
             gisp_url=gisp_url,
             product_id=product_id,
+            gisp_product_name=gisp_product_name,
         )
     finally:
         if own_client:
@@ -295,3 +316,40 @@ def _rollup(comparison: list[dict]) -> str:
     if "wording" in statuses or "missing_in_gisp" in statuses:
         return "warning"
     return "ok"
+
+
+_WRONG_REGISTRY_MATCH_RATIO = 0.15
+_WRONG_REGISTRY_MIN_ROWS = 3
+
+
+def _looks_like_wrong_registry(comparison: list[dict]) -> bool:
+    """True when almost nothing agreed — almost certainly a mis-quoted registry number.
+
+    We only fire when at least _WRONG_REGISTRY_MIN_ROWS characteristics were
+    compared so tiny catalogs (1-2 rows) don't produce false positives.
+    """
+    if len(comparison) < _WRONG_REGISTRY_MIN_ROWS:
+        return False
+    ok_count = sum(
+        1 for c in comparison if c.get("status") in ("ok", "wording")
+    )
+    return (ok_count / len(comparison)) < _WRONG_REGISTRY_MATCH_RATIO
+
+
+def _prepend_wrong_registry_note(
+    comparison: list[dict], kp_name: Optional[str], gisp_name: Optional[str],
+) -> list[dict]:
+    """Stick a diagnostic row at the top of the comparison list.
+
+    Shown in the expandable details so the user sees why we flagged the item —
+    "you uploaded Моноблок but that registry number belongs to Теплоизоляция".
+    """
+    note = {
+        "name": "Проверка товара",
+        "supplier_value": kp_name or "—",
+        "gisp_value": gisp_name or "—",
+        "status": "mismatch",
+        "comment": "Ни одна характеристика не совпала с карточкой ГИСП — "
+                   "вероятно, указан неверный реестровый номер",
+    }
+    return [note] + comparison

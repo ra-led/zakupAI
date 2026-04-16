@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import make_asgi_app
 from sqlalchemy import delete as sa_delete
 from sqlmodel import select
 
@@ -19,6 +20,9 @@ from .database import create_db_and_tables, get_session
 from .llm_openai import build_search_queries
 from .llm_stub import generate_email_body
 from .models import (
+    Application,
+    ApplicationLot,
+    ApplicationLotParameter,
     Bid,
     BidLot,
     BidLotParameter,
@@ -33,6 +37,11 @@ from .models import (
     User,
 )
 from .schemas import (
+    ApplicationCreate,
+    ApplicationLotComparisonResponse,
+    ApplicationLotParameterRead,
+    ApplicationLotRead,
+    ApplicationRead,
     BidCreate,
     ComparisonCharacteristicRowRead,
     BidLotParameterRead,
@@ -74,6 +83,7 @@ from .task_queue import (
 )
 
 app = FastAPI(title="zakupAI service", version="0.1.0")
+app.mount("/metrics", make_asgi_app())
 
 raw_origins = os.getenv("CORS_ORIGINS", "*")
 origins = [item.strip() for item in raw_origins.split(",") if item.strip()] or ["*"]
@@ -227,6 +237,28 @@ def _delete_bid_related(session, bid_id: int) -> None:
     session.exec(sa_delete(Bid).where(Bid.id == bid_id))
 
 
+def _delete_application_related(session, purchase_id: int, application_id: int) -> None:
+    application_lot_ids = session.exec(
+        select(ApplicationLot.id).where(ApplicationLot.application_id == application_id)
+    ).all()
+    if application_lot_ids:
+        session.exec(
+            sa_delete(ApplicationLotParameter).where(
+                ApplicationLotParameter.application_lot_id.in_(application_lot_ids)
+            )
+        )
+
+    session.exec(sa_delete(ApplicationLot).where(ApplicationLot.application_id == application_id))
+    session.exec(
+        sa_delete(LLMTask).where(
+            LLMTask.purchase_id == purchase_id,
+            LLMTask.task_type.in_(["application_lot_comparison", "application_lots_extraction"]),
+            LLMTask.input_text.like(f'%\"application_id\": {application_id}%'),
+        )
+    )
+    session.exec(sa_delete(Application).where(Application.id == application_id))
+
+
 def _delete_purchase_related(session, purchase_id: int) -> None:
     bid_ids = session.exec(select(Bid.id).where(Bid.purchase_id == purchase_id)).all()
     if bid_ids:
@@ -249,6 +281,26 @@ def _delete_purchase_related(session, purchase_id: int) -> None:
     if lot_ids:
         session.exec(sa_delete(LotParameter).where(LotParameter.lot_id.in_(lot_ids)))
     session.exec(sa_delete(Lot).where(Lot.purchase_id == purchase_id))
+
+    application_ids = session.exec(select(Application.id).where(Application.purchase_id == purchase_id)).all()
+    if application_ids:
+        application_lot_ids = session.exec(
+            select(ApplicationLot.id).where(ApplicationLot.application_id.in_(application_ids))
+        ).all()
+        if application_lot_ids:
+            session.exec(
+                sa_delete(ApplicationLotParameter).where(
+                    ApplicationLotParameter.application_lot_id.in_(application_lot_ids)
+                )
+            )
+        session.exec(sa_delete(ApplicationLot).where(ApplicationLot.application_id.in_(application_ids)))
+        session.exec(
+            sa_delete(LLMTask).where(
+                LLMTask.purchase_id == purchase_id,
+                LLMTask.task_type.in_(["application_lot_comparison", "application_lots_extraction"]),
+            )
+        )
+        session.exec(sa_delete(Application).where(Application.id.in_(application_ids)))
 
     supplier_ids = session.exec(select(Supplier.id).where(Supplier.purchase_id == purchase_id)).all()
     if supplier_ids:
@@ -301,6 +353,28 @@ def _load_bid_lots(session, bid_id: int) -> list[BidLotRead]:
                 price=lot.price,
                 parameters=[
                     BidLotParameterRead(name=param.name, value=param.value, units=param.units)
+                    for param in params
+                ],
+            )
+        )
+    return lot_reads
+
+
+def _load_application_lots(session, application_id: int) -> list[ApplicationLotRead]:
+    lots = session.exec(select(ApplicationLot).where(ApplicationLot.application_id == application_id)).all()
+    lot_reads: list[ApplicationLotRead] = []
+    for lot in lots:
+        params = session.exec(
+            select(ApplicationLotParameter).where(ApplicationLotParameter.application_lot_id == lot.id)
+        ).all()
+        lot_reads.append(
+            ApplicationLotRead(
+                id=lot.id or 0,
+                name=lot.name,
+                price=lot.price,
+                country_of_origin=lot.country_of_origin,
+                parameters=[
+                    ApplicationLotParameterRead(name=param.name, value=param.value, units=param.units)
                     for param in params
                 ],
             )
@@ -374,6 +448,68 @@ def _serialize_lot_comparison(task: LLMTask, bid_id: int) -> LotComparisonRespon
         task_id=task.id or 0,
         status=task.status,
         bid_id=bid_id,
+        created_at=task.created_at,
+        note=str(payload.get("note")) if payload.get("note") is not None else None,
+        rows=rows,
+    )
+
+
+def _serialize_application_lot_comparison(task: LLMTask, application_id: int) -> ApplicationLotComparisonResponse:
+    payload = _safe_json_dict(task.output_text)
+    rows_payload = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    rows: list[LotComparisonRowRead] = []
+    for item in rows_payload:
+        if not isinstance(item, dict):
+            continue
+        lot_params = item.get("lot_parameters") if isinstance(item.get("lot_parameters"), list) else []
+        bid_lot_params = item.get("bid_lot_parameters") if isinstance(item.get("bid_lot_parameters"), list) else []
+        rows.append(
+            LotComparisonRowRead(
+                lot_id=int(item.get("lot_id", 0)),
+                lot_name=str(item.get("lot_name") or ""),
+                lot_parameters=[
+                    LotParameterRead(
+                        name=str(param.get("name") or ""),
+                        value=str(param.get("value") or ""),
+                        units=str(param.get("units") or ""),
+                    )
+                    for param in lot_params
+                    if isinstance(param, dict)
+                ],
+                bid_lot_id=int(item["bid_lot_id"]) if item.get("bid_lot_id") is not None else None,
+                bid_lot_name=str(item.get("bid_lot_name")) if item.get("bid_lot_name") is not None else None,
+                bid_lot_price=str(item.get("bid_lot_price")) if item.get("bid_lot_price") is not None else None,
+                bid_lot_parameters=[
+                    BidLotParameterRead(
+                        name=str(param.get("name") or ""),
+                        value=str(param.get("value") or ""),
+                        units=str(param.get("units") or ""),
+                    )
+                    for param in bid_lot_params
+                    if isinstance(param, dict)
+                ],
+                confidence=float(item["confidence"]) if item.get("confidence") is not None else None,
+                reason=str(item.get("reason")) if item.get("reason") is not None else None,
+                characteristic_rows=[
+                    ComparisonCharacteristicRowRead(
+                        left_text=str(row.get("left_text") or ""),
+                        right_text=str(row.get("right_text") or ""),
+                        status=(
+                            row.get("status")
+                            if row.get("status") in ("unmatched_tz", "matched", "unmatched_kp")
+                            else "matched"
+                        ),
+                    )
+                    for row in (item.get("characteristic_rows") or [])
+                    if isinstance(row, dict)
+                ],
+            )
+        )
+
+    return ApplicationLotComparisonResponse(
+        task_id=task.id or 0,
+        status=task.status,
+        application_id=application_id,
         created_at=task.created_at,
         note=str(payload.get("note")) if payload.get("note") is not None else None,
         rows=rows,
@@ -539,6 +675,120 @@ def list_bids(
     ]
 
 
+@app.post("/purchases/{purchase_id}/applications", response_model=ApplicationRead, status_code=status.HTTP_201_CREATED)
+def create_application(
+    purchase_id: int,
+    payload: ApplicationCreate,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> ApplicationRead:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    application_text = payload.application_text.strip()
+    if not application_text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Application text is required")
+
+    supplier_name = payload.supplier_name
+    supplier_contact = payload.supplier_contact
+    supplier_id = payload.supplier_id
+    supplier = session.get(Supplier, supplier_id) if supplier_id else None
+
+    if supplier_id and (not supplier or supplier.purchase_id != purchase_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Supplier not found")
+
+    if supplier and not supplier_name:
+        supplier_name = supplier.company_name or supplier.website_url
+
+    if supplier and not supplier_contact:
+        contact = session.exec(
+            select(SupplierContact).where(SupplierContact.supplier_id == supplier.id).order_by(SupplierContact.id)
+        ).first()
+        if contact:
+            supplier_contact = contact.email
+
+    application = Application(
+        purchase_id=purchase_id,
+        supplier_id=supplier_id,
+        supplier_name=supplier_name,
+        supplier_contact=supplier_contact,
+        application_text=application_text,
+    )
+    session.add(application)
+    session.commit()
+    session.refresh(application)
+
+    if application.id is not None:
+        try:
+            task_queue.run_application_lots_extraction_now(
+                application.id,
+                application_text,
+                purchase_id=purchase_id,
+            )
+        except Exception as exc:
+            print(f"[application_lots_extraction] immediate run failed: {exc}")
+
+    lots = _load_application_lots(session, application.id or 0)
+    return ApplicationRead(
+        id=application.id or 0,
+        purchase_id=application.purchase_id,
+        supplier_id=application.supplier_id,
+        supplier_name=application.supplier_name,
+        supplier_contact=application.supplier_contact,
+        application_text=application.application_text,
+        created_at=application.created_at,
+        lots=lots,
+    )
+
+
+@app.get("/purchases/{purchase_id}/applications", response_model=List[ApplicationRead])
+def list_applications(
+    purchase_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> List[ApplicationRead]:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    applications = session.exec(
+        select(Application).where(Application.purchase_id == purchase_id).order_by(Application.created_at.desc())
+    ).all()
+    return [
+        ApplicationRead(
+            id=application.id or 0,
+            purchase_id=application.purchase_id,
+            supplier_id=application.supplier_id,
+            supplier_name=application.supplier_name,
+            supplier_contact=application.supplier_contact,
+            application_text=application.application_text,
+            created_at=application.created_at,
+            lots=_load_application_lots(session, application.id or 0),
+        )
+        for application in applications
+    ]
+
+
+@app.delete("/purchases/{purchase_id}/applications/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_application(
+    purchase_id: int,
+    application_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> None:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    application = session.get(Application, application_id)
+    if not application or application.purchase_id != purchase_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    _delete_application_related(session, purchase_id, application_id)
+    session.commit()
+
+
 @app.delete("/purchases/{purchase_id}/bids/{bid_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_bid(
     purchase_id: int,
@@ -632,6 +882,87 @@ def get_bid_lot_comparison(
     if not task:
         return None
     return _serialize_lot_comparison(task, bid_id)
+
+
+@app.post(
+    "/purchases/{purchase_id}/applications/{application_id}/comparison",
+    response_model=ApplicationLotComparisonResponse,
+)
+def start_application_lot_comparison(
+    purchase_id: int,
+    application_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> ApplicationLotComparisonResponse:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    application = session.get(Application, application_id)
+    if not application or application.purchase_id != purchase_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    existing = session.exec(
+        select(LLMTask)
+        .where(
+            LLMTask.purchase_id == purchase_id,
+            LLMTask.task_type == "application_lot_comparison",
+            LLMTask.input_text.like(f'%\"application_id\": {application_id}%'),
+            LLMTask.status.in_(["queued", "in_progress"]),
+        )
+        .order_by(LLMTask.created_at.desc())
+    ).first()
+    if existing:
+        return _serialize_application_lot_comparison(existing, application_id)
+
+    task = LLMTask(
+        purchase_id=purchase_id,
+        task_type="application_lot_comparison",
+        input_text=json.dumps(
+            {
+                "purchase_id": purchase_id,
+                "application_id": application_id,
+            },
+            ensure_ascii=False,
+        ),
+        status="queued",
+    )
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return _serialize_application_lot_comparison(task, application_id)
+
+
+@app.get(
+    "/purchases/{purchase_id}/applications/{application_id}/comparison",
+    response_model=ApplicationLotComparisonResponse | None,
+)
+def get_application_lot_comparison(
+    purchase_id: int,
+    application_id: int,
+    session=Depends(get_session),
+    current_user: User = Depends(auth.get_current_user),
+) -> ApplicationLotComparisonResponse | None:
+    purchase = session.get(Purchase, purchase_id)
+    if not purchase or purchase.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    application = session.get(Application, application_id)
+    if not application or application.purchase_id != purchase_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    task = session.exec(
+        select(LLMTask)
+        .where(
+            LLMTask.purchase_id == purchase_id,
+            LLMTask.task_type == "application_lot_comparison",
+            LLMTask.input_text.like(f'%\"application_id\": {application_id}%'),
+        )
+        .order_by(LLMTask.created_at.desc())
+    ).first()
+    if not task:
+        return None
+    return _serialize_application_lot_comparison(task, application_id)
 
 
 @app.post("/purchases/{purchase_id}/suppliers", response_model=SupplierRead, status_code=status.HTTP_201_CREATED)

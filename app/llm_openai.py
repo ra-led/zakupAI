@@ -4,13 +4,16 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from openai import OpenAI
+from app.llm_metrics import record_llm_usage
 try:
     from app.lots_extraction_prompting import (
+        build_application_lots_prompt_and_schema,
         build_bid_lots_prompt_and_schema,
         build_lots_prompt_and_schema,
     )
 except ImportError:  # pragma: no cover
     from lots_extraction_prompting import (
+        build_application_lots_prompt_and_schema,
         build_bid_lots_prompt_and_schema,
         build_lots_prompt_and_schema,
     )
@@ -87,7 +90,12 @@ def _with_reasoning_disabled(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
-def _raw_create_chat_completion(client: OpenAI, **kwargs):
+def _raw_create_chat_completion(
+    client: OpenAI,
+    metric_provider: str = "openai",
+    metric_operation: str = "unknown",
+    **kwargs,
+):
     request_payload = _with_reasoning_disabled(kwargs)
     raw_response = client.chat.completions.with_raw_response.create(**request_payload)
     status_code = getattr(raw_response, "status_code", None)
@@ -109,7 +117,17 @@ def _raw_create_chat_completion(client: OpenAI, **kwargs):
 
     print(f"[openai] status_code={status_code}")
     print(f"[openai] raw_response={raw_text}")
-    return raw_response.parse()
+    parsed_response = raw_response.parse()
+    try:
+        record_llm_usage(
+            parsed_response,
+            provider=metric_provider,
+            model=str(request_payload.get("model") or ""),
+            operation=metric_operation,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[metrics] failed to record llm usage: {exc}")
+    return parsed_response
 
 
 def _log_prompt(tag: str, messages: List[Dict[str, str]]) -> None:
@@ -164,6 +182,8 @@ def build_search_queries(terms_text: str, hints: List[str] | None = None) -> Gen
     try:
         response = _raw_create_chat_completion(
             client,
+            metric_provider="openai",
+            metric_operation="search_queries_generation",
             model=model,
             messages=messages,
             response_format={"type": "json_schema", "json_schema": SEARCH_QUERIES_SCHEMA},
@@ -195,6 +215,7 @@ def build_search_queries(terms_text: str, hints: List[str] | None = None) -> Gen
 
 _LOTS_PROMPT_STUB, LOTS_SCHEMA = build_lots_prompt_and_schema("")
 _BID_LOTS_PROMPT_STUB, LOTS_WITH_PRICE_SCHEMA = build_bid_lots_prompt_and_schema("")
+_APPLICATION_LOTS_PROMPT_STUB, APPLICATION_LOTS_WITH_PRICE_SCHEMA = build_application_lots_prompt_and_schema("")
 
 
 def _build_lots_prompt(terms_text: str) -> List[Dict[str, str]]:
@@ -216,6 +237,8 @@ def extract_lots(terms_text: str) -> Dict[str, Any]:
     try:
         response = _raw_create_chat_completion(
             client,
+            metric_provider="openai",
+            metric_operation="lots_extraction",
             model=model,
             messages=messages,
             response_format={"type": "json_schema", "json_schema": LOTS_SCHEMA},
@@ -255,6 +278,8 @@ def extract_bid_lots(terms_text: str) -> Dict[str, Any]:
     try:
         response = _raw_create_chat_completion(
             client,
+            metric_provider="openai",
+            metric_operation="bid_lots_extraction",
             model=model,
             messages=messages,
             response_format={"type": "json_schema", "json_schema": LOTS_WITH_PRICE_SCHEMA},
@@ -272,6 +297,47 @@ def extract_bid_lots(terms_text: str) -> Dict[str, Any]:
         return json.loads(output_text)
     except Exception as exc:  # noqa: BLE001
         print(f"[bid_lots_extraction] json_parse_failed: {exc}; raw_output={output_text}")
+        raise
+
+
+def _build_application_lots_prompt(terms_text: str) -> List[Dict[str, str]]:
+    prompt, _ = build_application_lots_prompt_and_schema(terms_text or "")
+    return [{"role": "user", "content": prompt}]
+
+
+def extract_application_lots(terms_text: str) -> Dict[str, Any]:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+
+    base_url = os.getenv("OPENAI_BASE_URL")
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
+
+    messages = _build_application_lots_prompt(terms_text)
+    _log_prompt("application_lots_extraction", messages)
+    try:
+        response = _raw_create_chat_completion(
+            client,
+            metric_provider="openai",
+            metric_operation="application_lots_extraction",
+            model=model,
+            messages=messages,
+            response_format={"type": "json_schema", "json_schema": APPLICATION_LOTS_WITH_PRICE_SCHEMA},
+            max_completion_tokens=2500,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[application_lots_extraction] openai_request_failed: {exc}")
+        raise
+
+    output_text = response.choices[0].message.content if response.choices else None
+    if not output_text:
+        raise RuntimeError("Empty response from OpenAI")
+
+    try:
+        return json.loads(output_text)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[application_lots_extraction] json_parse_failed: {exc}; raw_output={output_text}")
         raise
 
 
@@ -309,6 +375,8 @@ def extract_structured_contacts_from_perplexity(raw_answer: str, terms_text: str
 
     response = _raw_create_chat_completion(
         client,
+        metric_provider="openai",
+        metric_operation="perplexity_contacts_postprocess",
         model=model,
         messages=messages,
         response_format={"type": "json_schema", "json_schema": PERPLEXITY_SUPPLIERS_SCHEMA},

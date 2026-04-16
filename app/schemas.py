@@ -257,6 +257,38 @@ class BidRead(BaseModel):
     lots: List[BidLotRead] = Field(default_factory=list)
 
 
+class ApplicationCreate(BaseModel):
+    supplier_id: Optional[int] = None
+    supplier_name: Optional[str] = None
+    supplier_contact: Optional[str] = None
+    application_text: str
+
+
+class ApplicationLotParameterRead(BaseModel):
+    name: str
+    value: str
+    units: str
+
+
+class ApplicationLotRead(BaseModel):
+    id: int
+    name: str
+    price: Optional[str]
+    country_of_origin: Optional[str] = None
+    parameters: List[ApplicationLotParameterRead] = Field(default_factory=list)
+
+
+class ApplicationRead(BaseModel):
+    id: int
+    purchase_id: int
+    supplier_id: Optional[int]
+    supplier_name: Optional[str]
+    supplier_contact: Optional[str]
+    application_text: str
+    created_at: datetime
+    lots: List[ApplicationLotRead] = Field(default_factory=list)
+
+
 class ComparisonCharacteristicRowRead(BaseModel):
     left_text: str = ""
     right_text: str = ""
@@ -280,6 +312,15 @@ class LotComparisonResponse(BaseModel):
     task_id: int
     status: str
     bid_id: int
+    created_at: datetime
+    note: Optional[str] = None
+    rows: List[LotComparisonRowRead] = Field(default_factory=list)
+
+
+class ApplicationLotComparisonResponse(BaseModel):
+    task_id: int
+    status: str
+    application_id: int
     created_at: datetime
     note: Optional[str] = None
     rows: List[LotComparisonRowRead] = Field(default_factory=list)

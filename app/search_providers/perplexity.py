@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 from openai import OpenAI
 
+from app.llm_metrics import record_llm_usage
 from app.llm_openai import extract_structured_contacts_from_perplexity
 
 
@@ -37,6 +38,15 @@ def search_suppliers_with_perplexity(terms_text: str) -> Dict[str, Any]:
         messages=[{"role": "user", "content": prompt}],
         extra_body={"reasoning": {"enabled": True}},
     )
+    try:
+        record_llm_usage(
+            response,
+            provider="perplexity",
+            model=model,
+            operation="supplier_search_perplexity",
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[metrics] failed to record perplexity usage: {exc}")
     content = response.choices[0].message.content if response.choices else None
     if not content:
         raise RuntimeError("Empty response from Perplexity")

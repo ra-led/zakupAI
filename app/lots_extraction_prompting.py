@@ -40,6 +40,17 @@ class BidLotsExtractionResult(BaseModel):
     lots: list[BidLotItem] = Field(...)
 
 
+class ApplicationLotItem(LotItem):
+    price: str = Field(...)
+    country_of_origin: str | None = Field(default=None)
+
+
+class ApplicationLotsExtractionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lots: list[ApplicationLotItem] = Field(...)
+
+
 def _render_prompt(template_filename: str, terms_text: str) -> str:
     base_dir = Path(__file__).resolve().parent
     prompts_dir = base_dir / "prompts"
@@ -71,5 +82,15 @@ def build_bid_lots_prompt_and_schema(terms_text: str) -> Tuple[str, Dict[str, An
         "name": "bid_lots_extraction_result",
         "strict": True,
         "schema": BidLotsExtractionResult.model_json_schema(),
+    }
+    return prompt, schema
+
+
+def build_application_lots_prompt_and_schema(terms_text: str) -> Tuple[str, Dict[str, Any]]:
+    prompt = _render_prompt("application_lots_extraction_prompt.j2", terms_text)
+    schema: Dict[str, Any] = {
+        "name": "application_lots_extraction_result",
+        "strict": True,
+        "schema": ApplicationLotsExtractionResult.model_json_schema(),
     }
     return prompt, schema

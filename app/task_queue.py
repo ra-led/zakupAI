@@ -8,8 +8,17 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from .database import engine
-from .llm_openai import build_search_queries, extract_bid_lots, extract_lots
-from .models import BidLot, BidLotParameter, LLMTask, Lot, LotParameter, Purchase
+from .llm_openai import build_search_queries, extract_application_lots, extract_bid_lots, extract_lots
+from .models import (
+    ApplicationLot,
+    ApplicationLotParameter,
+    BidLot,
+    BidLotParameter,
+    LLMTask,
+    Lot,
+    LotParameter,
+    Purchase,
+)
 
 
 @dataclass
@@ -179,6 +188,42 @@ class TaskQueue:
                 raise RuntimeError("Bid lots extraction task disappeared")
             return refreshed
 
+    def run_application_lots_extraction_now(
+        self, application_id: int, terms_text: str, purchase_id: Optional[int] = None
+    ) -> LLMTask:
+        payload = {"application_id": application_id, "terms_text": terms_text or "", "purchase_id": purchase_id}
+        with Session(engine) as session:
+            task = LLMTask(
+                purchase_id=purchase_id,
+                task_type="application_lots_extraction",
+                input_text=json.dumps(payload, ensure_ascii=False),
+                status="in_progress",
+            )
+            session.add(task)
+            session.commit()
+            session.refresh(task)
+            task_id = task.id
+
+        if task_id is None:
+            raise RuntimeError("Failed to create application lots extraction task")
+
+        try:
+            self._process_task(task_id)
+        except Exception as exc:
+            print(f"[application_lots_extraction] failed for application {application_id}: {exc}")
+            with Session(engine) as session:
+                errored = session.get(LLMTask, task_id)
+                if errored:
+                    errored.status = "failed"
+                    errored.output_text = json.dumps({"error": str(exc)}, ensure_ascii=False)
+                    session.add(errored)
+                    session.commit()
+        with Session(engine) as session:
+            refreshed = session.get(LLMTask, task_id)
+            if not refreshed:
+                raise RuntimeError("Application lots extraction task disappeared")
+            return refreshed
+
     def _run(self) -> None:
         while not self._stop_event.is_set():
             with Session(engine) as session:
@@ -192,6 +237,7 @@ class TaskQueue:
                                 "supplier_search_perplexity",
                                 "lots_extraction",
                                 "bid_lots_extraction",
+                                "application_lots_extraction",
                             ]
                         ),
                     )
@@ -282,6 +328,24 @@ class TaskQueue:
                 task.status = "completed"
                 self._sync_bid_lots(session, int(bid_id), lots_payload)
                 print(f"[bid_lots_extraction] completed task={task.id} bid={bid_id}")
+            elif task.task_type == "application_lots_extraction":
+                payload = self._load_payload(task.input_text)
+                terms_text = payload.get("terms_text", "")
+                application_id = payload.get("application_id")
+                print(f"[application_lots_extraction] start task={task.id} application={application_id}")
+                print(f"[application_lots_extraction] application_text={terms_text}")
+                if not terms_text or not application_id:
+                    task.output_text = json.dumps({"lots": []}, ensure_ascii=False)
+                    task.status = "completed"
+                    session.add(task)
+                    session.commit()
+                    return
+
+                lots_payload = extract_application_lots(terms_text)
+                task.output_text = json.dumps(lots_payload, ensure_ascii=False)
+                task.status = "completed"
+                self._sync_application_lots(session, int(application_id), lots_payload)
+                print(f"[application_lots_extraction] completed task={task.id} application={application_id}")
             else:
                 task.status = "completed"
 
@@ -337,6 +401,39 @@ class TaskQueue:
             for param in lot_item.get("parameters") or []:
                 parameter = BidLotParameter(
                     bid_lot_id=lot.id,
+                    name=param.get("name", ""),
+                    value=param.get("value", ""),
+                    units=param.get("units", ""),
+                )
+                session.add(parameter)
+            session.commit()
+
+    @staticmethod
+    def _sync_application_lots(session: Session, application_id: int, payload: Dict[str, Any]) -> None:
+        lots_payload = payload.get("lots") or []
+        existing_lots = session.exec(select(ApplicationLot).where(ApplicationLot.application_id == application_id)).all()
+        for lot in existing_lots:
+            parameters = session.exec(
+                select(ApplicationLotParameter).where(ApplicationLotParameter.application_lot_id == lot.id)
+            ).all()
+            for param in parameters:
+                session.delete(param)
+            session.delete(lot)
+        session.commit()
+
+        for lot_item in lots_payload:
+            lot = ApplicationLot(
+                application_id=application_id,
+                name=lot_item.get("name", "Лот"),
+                price=lot_item.get("price", ""),
+                country_of_origin=lot_item.get("country_of_origin"),
+            )
+            session.add(lot)
+            session.commit()
+            session.refresh(lot)
+            for param in lot_item.get("parameters") or []:
+                parameter = ApplicationLotParameter(
+                    application_lot_id=lot.id,
                     name=param.get("name", ""),
                     value=param.get("value", ""),
                     units=param.get("units", ""),

@@ -317,6 +317,7 @@ const ACCOUNT_SECTIONS = [
   { id: 'suppliers', label: 'Поставщики' },
   { id: 'correspondence', label: 'Переписка' },
   { id: 'proposals', label: 'Предложения' },
+  { id: 'applications', label: 'Заявки' },
 ];
 
 function App() {
@@ -368,6 +369,20 @@ function App() {
   const [activeComparisonBidId, setActiveComparisonBidId] = useState(null);
   const [comparisonBusyBidId, setComparisonBusyBidId] = useState(null);
   const [activeBidId, setActiveBidId] = useState(null);
+  const [applications, setApplications] = useState([]);
+  const [pendingApplications, setPendingApplications] = useState([]);
+  const [showApplicationModal, setShowApplicationModal] = useState(false);
+  const [applicationForm, setApplicationForm] = useState({
+    supplier_id: '',
+    supplier_name: '',
+    supplier_contact: '',
+    application_text: '',
+  });
+  const [applicationFile, setApplicationFile] = useState(null);
+  const [comparisonByApplication, setComparisonByApplication] = useState({});
+  const [activeComparisonApplicationId, setActiveComparisonApplicationId] = useState(null);
+  const [comparisonBusyApplicationId, setComparisonBusyApplicationId] = useState(null);
+  const [activeApplicationId, setActiveApplicationId] = useState(null);
 
   useEffect(() => {
     if (token) {
@@ -436,6 +451,20 @@ function App() {
       setActiveBidId((prev) => {
         if (!data.length) return null;
         if (prev && data.some((bid) => bid.id === prev)) return prev;
+        return data[0].id;
+      });
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const loadApplications = async (purchaseId) => {
+    try {
+      const data = await apiWithToken(`/purchases/${purchaseId}/applications`);
+      setApplications(data);
+      setActiveApplicationId((prev) => {
+        if (!data.length) return null;
+        if (prev && data.some((item) => item.id === prev)) return prev;
         return data[0].id;
       });
     } catch (err) {
@@ -513,6 +542,7 @@ function App() {
     if (selectedId && token) {
       loadSuppliers(selectedId);
       loadBids(selectedId);
+      loadApplications(selectedId);
       setLlmQueries(null);
       setPurchaseDetailsExpanded(false);
       setLotsState({ status: 'queued', lots: [] });
@@ -520,6 +550,10 @@ function App() {
       setActiveComparisonBidId(null);
       setComparisonBusyBidId(null);
       setActiveBidId(null);
+      setComparisonByApplication({});
+      setActiveComparisonApplicationId(null);
+      setComparisonBusyApplicationId(null);
+      setActiveApplicationId(null);
 
       let isMounted = true;
       const fetchLots = async () => {
@@ -612,9 +646,13 @@ function App() {
           setSuppliers([]);
           setContactsBySupplier({});
           setBids([]);
+          setApplications([]);
           setActiveBidId(null);
           setActiveComparisonBidId(null);
           setComparisonByBid({});
+          setActiveApplicationId(null);
+          setActiveComparisonApplicationId(null);
+          setComparisonByApplication({});
         }
       }
       setMessage('Закупка удалена');
@@ -655,6 +693,107 @@ function App() {
     }
   };
 
+  const createApplication = async (evt) => {
+    evt.preventDefault();
+    if (!selectedId) return;
+    const purchaseId = selectedId;
+    const tempId = `pending-application-${Date.now()}`;
+    const pendingSupplierName = applicationForm.supplier_name?.trim() || 'Поставщик не указан';
+    const pendingSupplierContact = applicationForm.supplier_contact?.trim() || '';
+    setShowApplicationModal(false);
+    setPendingApplications((prev) => [
+      {
+        id: tempId,
+        supplier_name: pendingSupplierName,
+        supplier_contact: pendingSupplierContact,
+      },
+      ...prev,
+    ]);
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      let applicationText = applicationForm.application_text?.trim() || '';
+      if (applicationFile) {
+        applicationText = await convertTechTaskFile(applicationFile);
+      }
+      if (!applicationText) {
+        setError('Добавьте текст заявки или загрузите файл.');
+        return;
+      }
+      const payload = {
+        application_text: applicationText,
+        supplier_id: applicationForm.supplier_id ? Number(applicationForm.supplier_id) : null,
+        supplier_name: applicationForm.supplier_name?.trim() || null,
+        supplier_contact: applicationForm.supplier_contact?.trim() || null,
+      };
+      await apiWithToken(`/purchases/${purchaseId}/applications`, {
+        method: 'POST',
+        body: payload,
+      });
+      setApplicationForm({ supplier_id: '', supplier_name: '', supplier_contact: '', application_text: '' });
+      setApplicationFile(null);
+      setMessage('Заявка добавлена');
+      await loadApplications(purchaseId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPendingApplications((prev) => prev.filter((item) => item.id !== tempId));
+      setBusy(false);
+    }
+  };
+
+  const deleteApplication = async (applicationId) => {
+    if (!selectedId) return;
+    const approved = window.confirm('Удалить эту заявку? Это действие нельзя отменить.');
+    if (!approved) return;
+
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await apiWithToken(`/purchases/${selectedId}/applications/${applicationId}`, { method: 'DELETE' });
+      const nextApplications = applications.filter((item) => item.id !== applicationId);
+      setApplications(nextApplications);
+      if (activeApplicationId === applicationId) {
+        const fallbackId = nextApplications[0]?.id || null;
+        setActiveApplicationId(fallbackId);
+        setActiveComparisonApplicationId(fallbackId);
+      }
+      setComparisonByApplication((prev) => {
+        const next = { ...prev };
+        delete next[applicationId];
+        return next;
+      });
+      setMessage('Заявка удалена');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleApplicationSupplierChange = (value) => {
+    if (!value) {
+      setApplicationForm((prev) => ({
+        ...prev,
+        supplier_id: '',
+        supplier_name: '',
+        supplier_contact: '',
+      }));
+      return;
+    }
+    const supplierId = Number(value);
+    const supplier = suppliers.find((item) => item.id === supplierId);
+    const contacts = contactsBySupplier[supplierId] || [];
+    setApplicationForm((prev) => ({
+      ...prev,
+      supplier_id: value,
+      supplier_name: supplier?.company_name || supplier?.website_url || prev.supplier_name,
+      supplier_contact: contacts[0]?.email || prev.supplier_contact,
+    }));
+  };
+
   const handleBidSupplierChange = (value) => {
     if (!value) {
       setBidForm((prev) => ({
@@ -678,6 +817,9 @@ function App() {
 
   const selectedBidSupplierContacts = bidForm.supplier_id
     ? contactsBySupplier[Number(bidForm.supplier_id)] || []
+    : [];
+  const selectedApplicationSupplierContacts = applicationForm.supplier_id
+    ? contactsBySupplier[Number(applicationForm.supplier_id)] || []
     : [];
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -730,6 +872,54 @@ function App() {
     }
   };
 
+  const pollApplicationComparisonStatus = async (purchaseId, applicationId) => {
+    for (let attempt = 0; attempt < 45; attempt += 1) {
+      const state = await apiWithToken(`/purchases/${purchaseId}/applications/${applicationId}/comparison`);
+      if (state) {
+        setComparisonByApplication((prev) => ({ ...prev, [applicationId]: state }));
+      }
+      if (!state || (state.status !== 'queued' && state.status !== 'in_progress')) {
+        return state;
+      }
+      await sleep(2000);
+    }
+    return null;
+  };
+
+  const loadComparisonForApplication = async (purchaseId, applicationId, options = {}) => {
+    if (!purchaseId || !applicationId) return null;
+    const { pollIfRunning = false } = options;
+    const state = await apiWithToken(`/purchases/${purchaseId}/applications/${applicationId}/comparison`);
+    if (state) {
+      setComparisonByApplication((prev) => ({ ...prev, [applicationId]: state }));
+      if (pollIfRunning && (state.status === 'queued' || state.status === 'in_progress')) {
+        await pollApplicationComparisonStatus(purchaseId, applicationId);
+      }
+    }
+    return state;
+  };
+
+  const runApplicationComparison = async (applicationId) => {
+    if (!selectedId || !applicationId) return;
+    setActiveApplicationId(applicationId);
+    setActiveComparisonApplicationId(applicationId);
+    setComparisonBusyApplicationId(applicationId);
+    setError('');
+    try {
+      const started = await apiWithToken(`/purchases/${selectedId}/applications/${applicationId}/comparison`, {
+        method: 'POST',
+      });
+      setComparisonByApplication((prev) => ({ ...prev, [applicationId]: started }));
+      if (started.status === 'queued' || started.status === 'in_progress') {
+        await pollApplicationComparisonStatus(selectedId, applicationId);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setComparisonBusyApplicationId(null);
+    }
+  };
+
   useEffect(() => {
     if (!token || !selectedId || !activeBidId) return;
     setActiveComparisonBidId(activeBidId);
@@ -759,6 +949,35 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, selectedId, activeBidId]);
 
+  useEffect(() => {
+    if (!token || !selectedId || !activeApplicationId) return;
+    setActiveComparisonApplicationId(activeApplicationId);
+
+    const cached = comparisonByApplication[activeApplicationId];
+    if (cached) {
+      if (cached.status === 'queued' || cached.status === 'in_progress') {
+        setComparisonBusyApplicationId(activeApplicationId);
+        pollApplicationComparisonStatus(selectedId, activeApplicationId).finally(() => setComparisonBusyApplicationId(null));
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setComparisonBusyApplicationId(activeApplicationId);
+    loadComparisonForApplication(selectedId, activeApplicationId, { pollIfRunning: true })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setComparisonBusyApplicationId(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, selectedId, activeApplicationId]);
+
   const handleAuth = (newToken, email) => {
     localStorage.setItem('zakupai_token', newToken);
     localStorage.setItem('zakupai_user', email);
@@ -775,6 +994,7 @@ function App() {
     setSuppliers([]);
     setContactsBySupplier({});
     setBids([]);
+    setApplications([]);
     setSearchEtaByTask({});
     setSelectedId(null);
   };
@@ -901,6 +1121,10 @@ function App() {
   const activeComparisonBid =
     bids.find((bid) => bid.id === activeComparisonBidId) || activeBid || null;
   const activeComparisonRows = comparisonByBid[activeComparisonBidId]?.rows || [];
+  const activeApplication = applications.find((item) => item.id === activeApplicationId) || null;
+  const activeComparisonApplication =
+    applications.find((item) => item.id === activeComparisonApplicationId) || activeApplication || null;
+  const activeApplicationComparisonRows = comparisonByApplication[activeComparisonApplicationId]?.rows || [];
   const purchaseHasLongText = (selectedPurchase?.terms_text || '').length > 420;
   const lotsReady = lotsState.lots && lotsState.lots.length > 0;
   const truncateText = (value, limit) => (value.length > limit ? `${value.slice(0, limit)}…` : value);
@@ -920,6 +1144,30 @@ function App() {
           lotName: lot.name || 'Лот без названия',
           count: extractLotCount(lot),
           price: lot.price || '—',
+          characteristic: formatParamText(param),
+          firstRowForLot: index === 0,
+          rowSpan: params.length,
+        });
+      });
+    });
+    return rows;
+  };
+  const flattenApplicationLotsForTable = (application) => {
+    if (!application?.lots?.length) return [];
+    const rows = [];
+    application.lots.forEach((lot) => {
+      const baseParams = lot.parameters?.length ? [...lot.parameters] : [];
+      if (lot.country_of_origin) {
+        baseParams.unshift({ name: 'Страна производства', value: lot.country_of_origin, units: '' });
+      }
+      const params = baseParams.length ? baseParams : [{ name: '—', value: '—', units: '' }];
+      params.forEach((param, index) => {
+        rows.push({
+          id: `${lot.id}-${index}`,
+          lotName: lot.name || 'Лот без названия',
+          count: extractLotCount(lot),
+          price: lot.price || '—',
+          country: lot.country_of_origin || '—',
           characteristic: formatParamText(param),
           firstRowForLot: index === 0,
           rowSpan: params.length,
@@ -954,6 +1202,21 @@ function App() {
   };
   const activeBidLotRows = flattenBidLotsForTable(activeBid);
   const comparisonRenderRows = buildComparisonRows(activeComparisonRows, activeComparisonBid);
+  const activeApplicationLotRows = flattenApplicationLotsForTable(activeApplication);
+  const applicationComparisonRenderRows = buildComparisonRows(
+    activeApplicationComparisonRows,
+    activeComparisonApplication
+      ? {
+          ...activeComparisonApplication,
+          lots: (activeComparisonApplication.lots || []).map((lot) => ({
+            ...lot,
+            parameters: lot.country_of_origin
+              ? [{ name: 'Страна производства', value: lot.country_of_origin, units: '' }, ...(lot.parameters || [])]
+              : (lot.parameters || []),
+          })),
+        }
+      : null
+  );
   const buildComparisonTableRows = (row) => {
     if (row.characteristic_rows?.length) {
       return row.characteristic_rows.map((item) => ({
@@ -1885,6 +2148,314 @@ function App() {
                   </form>
                 </div>
               </div>
+                )}
+              </>
+            )}
+
+            {activeSection === 'applications' && (
+              <>
+                <div className="card">
+                  <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0 }}>Заявки</h3>
+                    <button className="secondary" onClick={() => setShowApplicationModal(true)} disabled={busy}>
+                      Добавить заявку
+                    </button>
+                  </div>
+                  {pendingApplications.length > 0 && (
+                    <div className="list" style={{ marginTop: 12 }}>
+                      {pendingApplications.map((pendingApplication) => (
+                        <div key={pendingApplication.id} className="card bid-card" style={{ marginBottom: 0, opacity: 0.8 }}>
+                          <div className="bid-card__header">
+                            <div>
+                              <div className="bid-card__title">Заявка</div>
+                              <div className="bid-card__supplier">{pendingApplication.supplier_name}</div>
+                              {pendingApplication.supplier_contact && <div className="muted">Контакт: {pendingApplication.supplier_contact}</div>}
+                            </div>
+                            <div className="tag">В обработке</div>
+                          </div>
+                          <p className="muted" style={{ marginBottom: 0 }}>
+                            Заявка отправлена. Конвертация файла и извлечение лотов/характеристик уже запущены…
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="bid-selector-list">
+                    {applications.map((application) => (
+                      <div
+                        key={application.id}
+                        className={`bid-selector-card${activeApplicationId === application.id ? ' active' : ''}`}
+                        onClick={() => {
+                          setActiveApplicationId(application.id);
+                          setActiveComparisonApplicationId(application.id);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setActiveApplicationId(application.id);
+                            setActiveComparisonApplicationId(application.id);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                      >
+                        <div className="bid-card__title">Заявка</div>
+                        <div className="bid-card__supplier">{application.supplier_name || 'Поставщик не указан'}</div>
+                        <div className="muted">Лотов: {application.lots?.length || 0}</div>
+                        {application.supplier_contact && <div className="muted">Контакт: {application.supplier_contact}</div>}
+                        <button
+                          type="button"
+                          className="linkish"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deleteApplication(application.id);
+                          }}
+                          disabled={busy}
+                          style={{ color: '#b91c1c', marginTop: 8, padding: 0 }}
+                        >
+                          Удалить заявку
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="create-card"
+                      onClick={() => setShowApplicationModal(true)}
+                      disabled={busy}
+                    >
+                      <div className="create-card__icon">＋</div>
+                      <div className="create-card__text">Добавить заявку</div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0 }}>Просмотр Заявки</h3>
+                    {activeApplication && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setActiveComparisonApplicationId(activeApplication.id);
+                          runApplicationComparison(activeApplication.id);
+                        }}
+                        disabled={comparisonBusyApplicationId === activeApplication.id}
+                      >
+                        {comparisonBusyApplicationId === activeApplication.id ? 'Сравниваем…' : 'Сравнить с ТЗ'}
+                      </button>
+                    )}
+                  </div>
+                  {!activeApplication && (
+                    <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                      Выберите заявку из списка карточек.
+                    </p>
+                  )}
+                  {activeApplication && (
+                    <>
+                      <p className="muted" style={{ marginTop: 12 }}>
+                        {activeApplication.supplier_name || 'Поставщик не указан'}
+                        {activeApplication.supplier_contact ? ` • ${activeApplication.supplier_contact}` : ''}
+                      </p>
+                      <div className="comparison-table-wrap">
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>Имя лота</th>
+                              <th>Количество</th>
+                              <th>Страна производства</th>
+                              <th>Характеристика</th>
+                              <th>Цена</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activeApplicationLotRows.length ? (
+                              activeApplicationLotRows.map((row) => (
+                                <tr key={`application-view-${row.id}`}>
+                                  {row.firstRowForLot && <td rowSpan={row.rowSpan}>{row.lotName}</td>}
+                                  {row.firstRowForLot && <td rowSpan={row.rowSpan}>{row.count}</td>}
+                                  {row.firstRowForLot && <td rowSpan={row.rowSpan}>{row.country}</td>}
+                                  <td>{row.characteristic}</td>
+                                  {row.firstRowForLot && <td rowSpan={row.rowSpan}>{row.price}</td>}
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={5} className="muted">
+                                  Лоты из заявки ещё не выделены.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="card">
+                  <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ margin: 0 }}>Сравнение</h3>
+                  </div>
+                  {!activeComparisonApplication && (
+                    <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                      Выберите заявку и нажмите «Сравнить».
+                    </p>
+                  )}
+                  {activeComparisonApplicationId && comparisonByApplication[activeComparisonApplicationId]?.status === 'failed' && (
+                    <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                      Сравнение завершилось ошибкой. Повторите попытку.
+                    </p>
+                  )}
+                  {activeComparisonApplicationId &&
+                    (comparisonByApplication[activeComparisonApplicationId]?.status === 'queued' ||
+                      comparisonByApplication[activeComparisonApplicationId]?.status === 'in_progress') && (
+                      <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                        Сравнение выполняется в ETL…
+                      </p>
+                    )}
+                  {activeComparisonApplicationId && comparisonByApplication[activeComparisonApplicationId]?.status === 'completed' && (
+                    <>
+                      <p className="muted" style={{ marginTop: 12 }}>
+                        {comparisonByApplication[activeComparisonApplicationId]?.note || 'Сравнение завершено'}
+                      </p>
+                      {applicationComparisonRenderRows.length ? (
+                        <div className="comparison-table-stack">
+                          {applicationComparisonRenderRows.map((row, rowIdx) => (
+                            <div
+                              key={`cmp-application-row-${row.lot_id || 'application-only'}-${row.bid_lot_id || 'none'}-${rowIdx}`}
+                              className="comparison-table-wrap"
+                            >
+                              <table className="table comparison-table">
+                                <thead>
+                                  <tr>
+                                    <th style={{ width: '50%' }}>
+                                      {row.lot_name || 'В ТЗ нет соответствующего лота'}
+                                    </th>
+                                    <th style={{ width: '50%' }}>
+                                      {row.bid_lot_name || 'В Заявке нет соответствующего лота'}
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {buildComparisonTableRows(row).map((line, lineIdx) => (
+                                    <tr
+                                      key={`cmp-application-line-${rowIdx}-${lineIdx}`}
+                                      className={
+                                        line.status === 'unmatched_tz'
+                                          ? 'comparison-row-unmatched-tz'
+                                          : line.status === 'unmatched_kp'
+                                            ? 'comparison-row-unmatched-kp'
+                                            : 'comparison-row-matched'
+                                      }
+                                    >
+                                      <td>{line.left}</td>
+                                      <td>{line.right}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="muted" style={{ marginBottom: 0 }}>
+                          Лоты для сравнения не найдены.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {showApplicationModal && (
+                  <div className="modal-overlay" role="dialog" aria-modal="true">
+                    <div className="modal" style={{ maxWidth: 720 }}>
+                      <div className="stack" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ margin: 0 }}>Новая заявка</h3>
+                        <button
+                          type="button"
+                          className="linkish"
+                          onClick={() => setShowApplicationModal(false)}
+                          disabled={busy}
+                          aria-label="Закрыть"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <form onSubmit={createApplication} className="stack" style={{ flexDirection: 'column', marginTop: 12 }}>
+                        <label>Поставщик из списка (необязательно)</label>
+                        <select
+                          value={applicationForm.supplier_id}
+                          onChange={(e) => handleApplicationSupplierChange(e.target.value)}
+                        >
+                          <option value="">Выберите поставщика</option>
+                          {suppliers.map((supplier) => (
+                            <option key={supplier.id} value={supplier.id}>
+                              {supplier.company_name || supplier.website_url || `Поставщик #${supplier.id}`}
+                            </option>
+                          ))}
+                        </select>
+
+                        <label>Название поставщика</label>
+                        <input
+                          value={applicationForm.supplier_name}
+                          onChange={(e) => setApplicationForm((f) => ({ ...f, supplier_name: e.target.value }))}
+                          placeholder="Например, ООО «Снабжение»"
+                        />
+                        <label>Контакт (email или телефон)</label>
+                        {selectedApplicationSupplierContacts.length > 0 && (
+                          <select
+                            value={applicationForm.supplier_contact}
+                            onChange={(e) => setApplicationForm((f) => ({ ...f, supplier_contact: e.target.value }))}
+                          >
+                            <option value="">Выберите контакт</option>
+                            {selectedApplicationSupplierContacts.map((contact) => (
+                              <option key={contact.id} value={contact.email}>
+                                {contact.email}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        <input
+                          value={applicationForm.supplier_contact}
+                          onChange={(e) => setApplicationForm((f) => ({ ...f, supplier_contact: e.target.value }))}
+                          placeholder="sales@example.com"
+                        />
+
+                        <label>Текст заявки</label>
+                        <textarea
+                          rows={6}
+                          value={applicationForm.application_text}
+                          onChange={(e) => setApplicationForm((f) => ({ ...f, application_text: e.target.value }))}
+                          placeholder="Вставьте текст заявки"
+                        />
+
+                        <label>Загрузить файл заявки</label>
+                        <input
+                          type="file"
+                          accept=".doc,.docx,.pdf,.txt"
+                          onChange={(e) => setApplicationFile(e.target.files?.[0] || null)}
+                        />
+                        <p className="muted" style={{ marginTop: 0 }}>
+                          Если выбран файл, он будет использован вместо текста.
+                        </p>
+
+                        <div className="stack" style={{ justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => setShowApplicationModal(false)}
+                            disabled={busy}
+                          >
+                            Отмена
+                          </button>
+                          <button type="submit" className="primary" disabled={busy}>
+                            Сохранить заявку
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
                 )}
               </>
             )}

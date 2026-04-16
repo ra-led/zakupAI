@@ -25,6 +25,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       CORS_ORIGINS: ${CORS_ORIGINS}
+      METRICS_SERVICE_NAME: backend
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
       PERPLEXITY_MODEL: ${PERPLEXITY_MODEL}
@@ -43,6 +44,8 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      METRICS_SERVICE_NAME: etl_suppliers
+      METRICS_PORT: 9101
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
       PERPLEXITY_MODEL: ${PERPLEXITY_MODEL}
@@ -60,6 +63,8 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      METRICS_SERVICE_NAME: etl_compare
+      METRICS_PORT: 9102
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
       WORKER_TASK_TYPES: lot_comparison
@@ -98,6 +103,37 @@ services:
       - ./tender-gpt.ru.key:/etc/ssl/tender-gpt.ru.key:ro
       - ./ca.crt:/etc/ssl/ca.crt:ro
 
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - etl-suppliers
+      - etl-compare
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+
 volumes:
   db_data:
   doc_to_md_models:
+  prometheus_data:
+  grafana_data:

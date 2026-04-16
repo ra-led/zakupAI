@@ -6,10 +6,12 @@ import math
 from typing import Dict, List, Optional, Tuple
 
 from openai import OpenAI
+from prometheus_client import start_http_server
 from sqlalchemy import update
 from sqlmodel import Session, select
 
 from app.database import create_db_and_tables, engine
+from app.llm_metrics import record_llm_usage
 from app.models import BidLot, BidLotParameter, LLMTask, Lot, LotParameter, Purchase, Supplier, SupplierContact
 from app.search_providers.perplexity import search_suppliers_with_perplexity
 from app.supplier_import import merge_contacts
@@ -42,7 +44,17 @@ def _chat_completion_with_reasoning(client: OpenAI, **kwargs):
         payload["extra_body"] = merged
     else:
         payload["extra_body"] = {"reasoning": {"enabled": True}}
-    return client.chat.completions.create(**payload)
+    response = client.chat.completions.create(**payload)
+    try:
+        record_llm_usage(
+            response,
+            provider="openrouter",
+            model=str(payload.get("model") or ""),
+            operation="lot_comparison_match",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to record LLM usage metrics: %s", exc)
+    return response
 
 
 def _upsert_suppliers(session: Session, task: LLMTask, merged_contacts: List[Dict]) -> List[Dict]:
@@ -661,6 +673,11 @@ def run_worker() -> None:
     if not task_types:
         raise RuntimeError("WORKER_TASK_TYPES is empty")
 
+    metrics_port_raw = (os.getenv("METRICS_PORT") or "9100").strip()
+    metrics_port = int(metrics_port_raw) if metrics_port_raw else 9100
+    start_http_server(metrics_port, addr="0.0.0.0")
+
+    logger.info("Worker metrics are exposed on port %s", metrics_port)
     logger.info("Worker started for task types: %s", ",".join(task_types))
     create_db_and_tables()
     while True:

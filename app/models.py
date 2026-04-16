@@ -100,6 +100,16 @@ class Bid(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class Application(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    purchase_id: int = Field(foreign_key="purchase.id")
+    supplier_id: Optional[int] = Field(default=None, foreign_key="supplier.id")
+    supplier_name: Optional[str] = None
+    supplier_contact: Optional[str] = None
+    application_text: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class BidLot(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     bid_id: int = Field(foreign_key="bid.id")
@@ -111,6 +121,23 @@ class BidLot(SQLModel, table=True):
 class BidLotParameter(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     bid_lot_id: int = Field(foreign_key="bidlot.id")
+    name: str
+    value: str
+    units: str
+
+
+class ApplicationLot(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    application_id: int = Field(foreign_key="application.id")
+    name: str
+    price: Optional[str] = None
+    country_of_origin: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ApplicationLotParameter(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    application_lot_id: int = Field(foreign_key="applicationlot.id")
     name: str
     value: str
     units: str

@@ -1001,33 +1001,36 @@ body {
 .comparison-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .comparison-table th, .comparison-table td {
-  padding: 10px 12px;
+  padding: 10px 14px;
   border: 1px solid var(--border);
   text-align: left;
 }
 
 .comparison-table th {
-  background: #fafbfc;
-  font-weight: 600;
-  font-size: 12px;
+  background: var(--surface-low);
+  font-weight: 700;
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
 }
 
 .comparison-table thead th:first-child {
-  background: var(--dark);
+  background: var(--primary-container);
   color: #fff;
 }
 
-.match { color: var(--success); font-weight: 500; }
-.mismatch { color: var(--danger); font-weight: 500; }
-.partial { color: var(--warning); font-weight: 500; }
-.extra { color: var(--text-secondary); font-weight: 400; }
+.match { color: var(--success); font-weight: 600; }
+.mismatch { color: var(--danger); font-weight: 600; }
+.partial { color: var(--warning); font-weight: 600; }
+.extra { color: var(--text-muted); font-weight: 400; }
 
 /* De-prioritize extra KP rows (not in TZ) */
-.comp-row-unmatched_kp td { color: var(--text-secondary); font-size: 12px; opacity: 0.7; }
+.comp-row-unmatched_kp td { color: var(--text-muted); font-size: var(--fs-small); opacity: 0.7; }
 
 .check-icon { font-size: 16px; }
 
@@ -1708,32 +1711,34 @@ input[type="checkbox"] {
 .comp-suppliers-bar { margin-bottom: 20px; }
 
 .comp-suppliers-label {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--fs-micro);
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-secondary);
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
   margin-bottom: 10px;
 }
 
 .comp-suppliers-list {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   overflow-x: auto;
   padding-bottom: 4px;
+  flex-wrap: wrap;
 }
 
 .comp-supplier-tab {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 16px;
+  padding: 8px 14px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
   transition: all 0.2s;
-  min-width: 200px;
+  min-width: 180px;
   background: var(--card);
+  box-shadow: var(--shadow);
 }
 
 .comp-supplier-tab:hover { border-color: var(--accent); }
@@ -1753,18 +1758,18 @@ input[type="checkbox"] {
 
 .comp-supplier-indicator--warn { background: var(--warning); }
 .comp-supplier-indicator--ok { background: var(--success); }
-.comp-supplier-indicator--pending { background: #d1d5db; }
+.comp-supplier-indicator--pending { background: var(--outline-variant); }
 
 .comp-supplier-tab-name {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--fs-body);
+  font-weight: 700;
   color: var(--text);
   white-space: nowrap;
 }
 
 .comp-supplier-tab-meta {
-  font-size: 11px;
-  color: var(--text-secondary);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -1774,32 +1779,32 @@ input[type="checkbox"] {
 /* ===== COMPARISON SUB-TABS ===== */
 .comp-subtabs {
   display: flex;
-  background: var(--bg);
-  padding: 5px;
+  background: var(--surface-low);
+  padding: 4px;
   margin: 16px 20px 0 20px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   gap: 4px;
 }
 
 .comp-subtab {
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 500;
+  padding: 7px 14px;
+  font-size: var(--fs-body);
+  font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   gap: 8px;
   transition: all 0.2s;
 }
 
-.comp-subtab:hover { color: var(--text); background: var(--border); }
+.comp-subtab:hover { color: var(--text); background: var(--surface-container); }
 
 .comp-subtab.active {
   color: var(--text);
   background: var(--card);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow);
 }
 
 .comp-subtab-dot {
@@ -1813,15 +1818,15 @@ input[type="checkbox"] {
 .comp-subtab-count {
   background: var(--accent);
   color: #fff;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--fs-micro);
+  font-weight: 700;
   padding: 1px 7px;
   border-radius: 10px;
 }
 
 .comp-subtab-count--muted {
-  background: var(--border);
-  color: var(--text-secondary);
+  background: var(--surface-container);
+  color: var(--text-muted);
 }
 
 .comp-tab-content { display: none; }

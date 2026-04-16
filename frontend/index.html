@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=20260416c">
+  <link rel="stylesheet" href="css/main.css?v=20260416d">
 </head>
 <body>
 
@@ -311,24 +311,24 @@
             <div class="card-header">
               <h3>Сравнение ТЗ и коммерческих предложений</h3>
               <div class="flex-gap">
-                <button class="btn btn-primary btn-sm" id="btn-compare" disabled>Запустить сравнение</button>
-                <button class="btn btn-secondary" id="btn-comparison-diag" style="padding:4px 10px;font-size:12px">Диагностика</button>
+                <button class="btn btn-primary btn-sm" id="btn-compare" disabled><span class="material-symbols-outlined" style="font-size:14px">play_arrow</span> Запустить сравнение</button>
+                <button class="btn btn-secondary btn-sm" id="btn-comparison-diag">Диагностика</button>
               </div>
             </div>
             <div class="card-body">
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                 <div class="upload-zone" id="comparison-tz-zone">
-                  <div class="icon">&#128203;</div>
+                  <div class="icon"><span class="material-symbols-outlined">description</span></div>
                   <div class="label">Техническое задание</div>
                   <div class="hint" id="comparison-tz-hint">ТЗ не загружено</div>
-                  <div class="hint" style="color:var(--text-secondary);font-size:11px;">pdf, xlsx, doc, docx, rtf, txt</div>
+                  <div class="hint" style="color:var(--text-muted);font-size:11px;">pdf, xlsx, doc, docx, rtf, txt</div>
                   <input type="file" id="inp-comparison-tz-file" accept=".pdf,.xlsx,.doc,.docx,.rtf,.txt" style="display:none">
                 </div>
                 <div class="upload-zone" id="comparison-kp-zone">
-                  <div class="icon">&#128196;</div>
+                  <div class="icon"><span class="material-symbols-outlined">upload_file</span></div>
                   <div class="label">Коммерческие предложения</div>
                   <div class="hint" id="comparison-kp-hint">КП не загружены</div>
-                  <div class="hint" style="color:var(--text-secondary);font-size:11px;">pdf, xlsx, doc, docx (можно несколько)</div>
+                  <div class="hint" style="color:var(--text-muted);font-size:11px;">pdf, xlsx, doc, docx (можно несколько)</div>
                   <input type="file" id="inp-comparison-kp-file" accept=".pdf,.xlsx,.doc,.docx" multiple style="display:none">
                 </div>
               </div>
@@ -660,10 +660,10 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/config.js?v=20260416c"></script>
-  <script src="js/api.js?v=20260416c"></script>
-  <script src="js/auth.js?v=20260416c"></script>
-  <script src="js/app.js?v=20260416c"></script>
+  <script src="js/config.js?v=20260416d"></script>
+  <script src="js/api.js?v=20260416d"></script>
+  <script src="js/auth.js?v=20260416d"></script>
+  <script src="js/app.js?v=20260416d"></script>
   <script>
     Auth.requireAuth();
     // Show admin sections + populate avatar initials

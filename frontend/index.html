@@ -20,7 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/main.css?v=20260416b">
+  <link rel="stylesheet" href="css/main.css?v=20260416c">
 </head>
 <body>
 
@@ -163,7 +163,7 @@
             <div class="card" id="tz-upload-card">
               <div class="card-body">
                 <div class="upload-zone" id="tz-upload-zone">
-                  <div class="icon">&#128196;</div>
+                  <div class="icon"><span class="material-symbols-outlined">description</span></div>
                   <div class="label">Загрузить ТЗ</div>
                   <div class="hint">pdf, xlsx, doc, docx, rtf, txt</div>
                   <input type="file" id="inp-tz-file" accept=".pdf,.xlsx,.doc,.docx,.rtf,.txt" style="display:none">
@@ -179,14 +179,15 @@
               <div class="card-header">
                 <h3>Поиск поставщиков</h3>
                 <div class="flex-gap">
-                  <button class="btn btn-primary" id="btn-search-suppliers">&#9654; Запустить поиск</button>
-                  <button class="btn btn-secondary" id="btn-refresh-search">Обновить статус</button>
+                  <button class="btn btn-primary" id="btn-search-suppliers"><span class="material-symbols-outlined" style="font-size:16px">play_arrow</span> Запустить поиск</button>
+                  <button class="btn btn-secondary" id="btn-refresh-search"><span class="material-symbols-outlined" style="font-size:16px">refresh</span> Обновить статус</button>
                 </div>
               </div>
               <div class="card-body">
                 <div id="search-status" class="hidden"></div>
                 <div class="info-block">
-                  &#8505; Поиск найдёт поставщиков, покрывающих <b>все лоты</b> одновременно
+                  <span class="material-symbols-outlined">info</span>
+                  <span>Поиск найдёт поставщиков, покрывающих <b>все лоты</b> одновременно</span>
                 </div>
               </div>
             </div>
@@ -195,12 +196,13 @@
             <div class="card section-gap">
               <div class="card-header">
                 <h3>Свои поставщики</h3>
-                <button class="btn btn-primary btn-sm" id="btn-add-supplier">+ Добавить</button>
+                <button class="btn btn-primary btn-sm" id="btn-add-supplier"><span class="material-symbols-outlined" style="font-size:14px">add</span> Добавить</button>
               </div>
               <div class="card-body">
                 <div id="own-suppliers-container">
                   <div class="info-block">
-                    &#128100; Добавьте своих поставщиков — им тоже будет направлен запрос ТКП
+                    <span class="material-symbols-outlined">person_add</span>
+                    <span>Добавьте своих поставщиков — им тоже будет направлен запрос ТКП</span>
                   </div>
                 </div>
               </div>
@@ -658,10 +660,10 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/config.js?v=20260416b"></script>
-  <script src="js/api.js?v=20260416b"></script>
-  <script src="js/auth.js?v=20260416b"></script>
-  <script src="js/app.js?v=20260416b"></script>
+  <script src="js/config.js?v=20260416c"></script>
+  <script src="js/api.js?v=20260416c"></script>
+  <script src="js/auth.js?v=20260416c"></script>
+  <script src="js/app.js?v=20260416c"></script>
   <script>
     Auth.requireAuth();
     // Show admin sections + populate avatar initials

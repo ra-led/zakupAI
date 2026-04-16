@@ -857,7 +857,7 @@
     var container = $('own-suppliers-container');
     var ownSuppliers = currentSuppliers.filter(function (s) { return s.source === 'manual'; });
     if (!ownSuppliers.length) {
-      container.innerHTML = '<div class="info-block">&#128100; Добавьте своих поставщиков — им тоже будет направлен запрос ТКП</div>';
+      container.innerHTML = '<div class="info-block"><span class="material-symbols-outlined">person_add</span><span>Добавьте своих поставщиков — им тоже будет направлен запрос ТКП</span></div>';
       return;
     }
     var html = '';

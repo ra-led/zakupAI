@@ -2166,7 +2166,7 @@
               supplier_name: supplierName,
             },
           });
-          trackFile(currentPurchase.id, file.name, 'regime_kp');
+          trackFile(currentPurchase.id, file.name, 'kp');
           uploaded++;
           _setRegimeUploadStatus('Загружено ' + uploaded + '/' + total, 'info');
         }
@@ -2756,8 +2756,12 @@
       regime_check_status: 'Нацрежим',
     };
 
-    var fileTypeLabels = { tz: 'ТЗ', kp: 'КП', regime_kp: 'КП (нацрежим)' };
-    var fileTypeIcons = { tz: 'description', kp: 'table_chart', regime_kp: 'verified' };
+    // 'regime_kp' is a legacy type from early M4 uploads — collapse it into 'kp'
+    // for display so the same filename uploaded via Comparison and Нацрежим
+    // doesn't produce two chips on the card.
+    var fileTypeLabels = { tz: 'ТЗ', kp: 'КП', regime_kp: 'КП' };
+    var fileTypeIcons = { tz: 'description', kp: 'table_chart', regime_kp: 'table_chart' };
+    var _normalizeFileType = function (t) { return t === 'regime_kp' ? 'kp' : t; };
 
     var html = '';
     for (var i = 0; i < items.length; i++) {
@@ -2783,11 +2787,22 @@
         '<span><b>' + p.suppliers_count + '</b>поставщ.</span>' +
         '<span><b>' + p.bids_count + '</b>КП</span>';
 
-      // Files
+      // Files — dedup by (normalized type + filename) so one file uploaded
+      // via both tabs (Comparison writes 'kp', Нацрежим wrote 'regime_kp')
+      // shows as a single chip.
       var filesHtml = '';
       if (p.files && p.files.length) {
-        for (var f = 0; f < p.files.length; f++) {
-          var fl = p.files[f];
+        var seen = {};
+        var uniqueFiles = [];
+        for (var fi = 0; fi < p.files.length; fi++) {
+          var fl0 = p.files[fi];
+          var key = _normalizeFileType(fl0.file_type) + '|' + fl0.filename;
+          if (seen[key]) continue;
+          seen[key] = true;
+          uniqueFiles.push(fl0);
+        }
+        for (var f = 0; f < uniqueFiles.length; f++) {
+          var fl = uniqueFiles[f];
           var typeLabel = fileTypeLabels[fl.file_type] || fl.file_type;
           var typeIcon = fileTypeIcons[fl.file_type] || 'draft';
           var fname = escapeHtml(fl.filename);

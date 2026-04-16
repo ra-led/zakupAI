@@ -188,7 +188,9 @@ services:
       - "80"
 
   prometheus:
-    image: prom/prometheus:v2.53.0
+    build:
+      context: .
+      dockerfile: monitoring/prometheus/Dockerfile
     restart: unless-stopped
     depends_on:
       - backend
@@ -198,10 +200,7 @@ services:
       - etl-compare-1
     expose:
       - "9090"
-    command:
-      - "--config.file=/etc/prometheus/main.yml"
     volumes:
-      - ./monitoring/prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
 
   grafana:

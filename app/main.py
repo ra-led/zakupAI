@@ -1401,6 +1401,32 @@ def create_llm_task(
     return task
 
 
+def _build_terms_text_from_lots(session, purchase_id: int) -> str:
+    """Synthesize a ТЗ-like text from manually-entered lots.
+
+    When a user creates a purchase by typing lots directly (no ТЗ file),
+    purchase.terms_text is empty — passing that to the supplier pipeline
+    makes the LLM generate generic template queries and crawl random
+    marketplaces. Falling back to the lots gives the pipeline a concrete
+    subject to search for.
+    """
+    lots = session.exec(select(Lot).where(Lot.purchase_id == purchase_id)).all()
+    if not lots:
+        return ""
+    blocks: List[str] = []
+    for lot in lots:
+        params = session.exec(select(LotParameter).where(LotParameter.lot_id == lot.id)).all()
+        param_lines = [
+            f"  - {(p.name or '').strip()}: {(p.value or '').strip()} {(p.units or '').strip()}".rstrip()
+            for p in params
+        ]
+        block = f"Лот: {lot.name.strip()}"
+        if param_lines:
+            block += "\nПараметры:\n" + "\n".join(param_lines)
+        blocks.append(block)
+    return "\n\n".join(blocks)
+
+
 @app.post("/purchases/{purchase_id}/suppliers/search", response_model=SupplierSearchResponse)
 def search_suppliers(
     purchase_id: int,
@@ -1411,6 +1437,12 @@ def search_suppliers(
     purchase = session.get(Purchase, purchase_id)
     if not purchase or purchase.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Purchase not found")
+
+    resolved_terms_text = (
+        payload.terms_text
+        or purchase.terms_text
+        or _build_terms_text_from_lots(session, purchase_id)
+    )
 
     state = get_supplier_search_state(purchase_id)
     # Only return the existing state if it's still active. If the latest
@@ -1423,13 +1455,13 @@ def search_suppliers(
         if payload.provider == "perplexity":
             task = task_queue.enqueue_supplier_search_perplexity_task(
                 purchase_id,
-                payload.terms_text or purchase.terms_text or "",
+                resolved_terms_text,
                 payload.hints,
             )
         else:
             task = task_queue.enqueue_supplier_search_task(
                 purchase_id,
-                payload.terms_text or purchase.terms_text or "",
+                resolved_terms_text,
                 payload.hints,
             )
         queue_length = get_supplier_search_queue_length()
@@ -1449,7 +1481,7 @@ def search_suppliers(
     if state.status == "completed" and not state.queries:
         try:
             plan = build_search_queries(
-                payload.terms_text or purchase.terms_text or "",
+                resolved_terms_text,
                 payload.hints,
                 usage_ctx={"purchase_id": purchase_id, "user_id": current_user.id},
             )

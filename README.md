@@ -7,25 +7,24 @@
    ```bash
    cp .env.example .env
    ```
-2. Поднимите стек (PostgreSQL + backend + фронтенд + nginx-прокси):
+2. Поднимите стек (PostgreSQL + backend + фронтенд + ETL + мониторинг):
    ```bash
    docker-compose up --build
    ```
-3. Через nginx фронтенд доступен на http://localhost, API — на http://localhost/api (Swagger: `/api/docs`). Для отладки можно ходить напрямую на backend http://localhost:8000.
+3. Для локальной отладки используйте прямые сервисные адреса:
+   - frontend: http://localhost:4173 (через `npm run dev` в каталоге `frontend`)
+   - backend API: http://localhost:8000 (Swagger: `/docs`)
 
 ## Деплой в Coolify
-Для Coolify подготовлены отдельные файлы:
-- `docker-compose.coolify.yml`
-- `nginx.coolify.conf`
+Используется единый `docker-compose.yml`.
 
 Что важно для Coolify:
-- Внутри контейнера `nginx` работает только по `80` (TLS и сертификаты терминирует сам Coolify).
-- В качестве публичного сервиса в Coolify укажите `nginx` на порту `80`.
+- Прокидывайте публичные маршруты напрямую на нужные сервисы (например, frontend и backend) через правила роутинга Coolify.
 - В переменных окружения обязательно задайте:
   - `DATABASE_URL` (обычно `postgresql+psycopg2://...@db:5432/...`)
   - `CORS_ORIGINS` (например, `https://ваш-домен`)
   - ключи интеграций (`OPENAI_API_KEY`/`OPENROUTER_API_KEY`, `YANDEX_API_KEY`, `YANDEX_FOLDER_ID` и т.д.)
-- `VITE_API_URL` можно оставить пустым, тогда фронтенд будет ходить в API через текущий домен и путь `/api`.
+- `VITE_API_URL` можно оставить пустым, если API доступен с того же домена по правилам роутинга; иначе задайте явный URL API.
 
 Основные переменные `.env` для поиска поставщиков:
 - `YANDEX_API_KEY`, `YANDEX_FOLDER_ID` — ключ и каталог Yandex Search API.

@@ -175,18 +175,6 @@ services:
     expose:
       - "8001"
 
-  nginx:
-    build:
-      context: .
-      dockerfile: Dockerfile.nginx.coolify
-    restart: unless-stopped
-    depends_on:
-      - frontend
-      - backend
-      - doc-to-md
-    expose:
-      - "80"
-
   prometheus:
     build:
       context: .

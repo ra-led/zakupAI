@@ -27,8 +27,22 @@ logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = float(os.getenv("ETL_POLL_INTERVAL", "5"))
 MAX_WORKERS = int(os.getenv("ETL_MAX_WORKERS", "5"))
+DEFAULT_WORKER_TASK_TYPES = ["supplier_search", "supplier_search_perplexity", "lot_comparison"]
 
-ETL_TASK_TYPES = ["supplier_search", "supplier_search_perplexity", "lot_comparison"]
+
+def _parse_worker_task_types() -> List[str]:
+    task_types_raw = (os.getenv("WORKER_TASK_TYPES") or "").strip()
+    task_types = (
+        [item.strip() for item in task_types_raw.split(",") if item.strip()]
+        if task_types_raw
+        else DEFAULT_WORKER_TASK_TYPES
+    )
+    if not task_types:
+        raise RuntimeError("WORKER_TASK_TYPES is empty")
+    return task_types
+
+
+WORKER_TASK_TYPES = _parse_worker_task_types()
 
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OPENROUTER_EMBEDDING_MODEL = os.getenv("OPENROUTER_EMBEDDING_MODEL", "perplexity/pplx-embed-v1-4b")
@@ -1016,7 +1030,7 @@ def _recover_stale_tasks() -> None:
         stale = session.exec(
             select(LLMTask).where(
                 LLMTask.status == "in_progress",
-                LLMTask.task_type.in_(ETL_TASK_TYPES),
+                LLMTask.task_type.in_(WORKER_TASK_TYPES),
             )
         ).all()
         for t in stale:
@@ -1080,7 +1094,7 @@ def _try_claim(session: Session, exclude_purchase_ids: set[int]) -> Optional[LLM
         select(LLMTask)
         .where(
             LLMTask.status == "queued",
-            LLMTask.task_type.in_(ETL_TASK_TYPES),
+            LLMTask.task_type.in_(WORKER_TASK_TYPES),
         )
     )
     if exclude_purchase_ids:
@@ -1109,7 +1123,11 @@ def _get_active_purchase_ids(futures: dict[Future, int]) -> set[int]:
 
 def run_worker() -> None:
     create_db_and_tables()
-    logger.info("[etl] worker starting (max_workers=%d)", MAX_WORKERS)
+    logger.info(
+        "[etl] worker starting (max_workers=%d, task_types=%s)",
+        MAX_WORKERS,
+        ",".join(WORKER_TASK_TYPES),
+    )
     _recover_stale_tasks()
 
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)

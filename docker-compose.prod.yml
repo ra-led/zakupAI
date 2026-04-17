@@ -73,7 +73,7 @@ services:
       retries: 3
       start_period: 15s
 
-  etl:
+  etl-suppliers:
     build:
       context: .
       dockerfile: etl/Dockerfile
@@ -95,6 +95,27 @@ services:
       PAGE_LOAD_TIMEOUT: ${PAGE_LOAD_TIMEOUT:-25}
       QUERY_DOCS_LIMIT: ${QUERY_DOCS_LIMIT:-3}
       ETL_POLL_INTERVAL: ${ETL_POLL_INTERVAL:-5}
+      WORKER_TASK_TYPES: supplier_search,supplier_search_perplexity
+    expose:
+      - "8002"
+
+  etl-compare:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://zakupai:zakupai@db:5432/zakupai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
+      ETL_POLL_INTERVAL: ${ETL_POLL_INTERVAL:-5}
+      WORKER_TASK_TYPES: lot_comparison
     expose:
       - "8002"
 

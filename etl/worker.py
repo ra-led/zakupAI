@@ -12,7 +12,18 @@ from sqlmodel import Session, select
 
 from app.database import create_db_and_tables, engine
 from app.llm_metrics import record_llm_usage
-from app.models import BidLot, BidLotParameter, LLMTask, Lot, LotParameter, Purchase, Supplier, SupplierContact
+from app.models import (
+    ApplicationLot,
+    ApplicationLotParameter,
+    BidLot,
+    BidLotParameter,
+    LLMTask,
+    Lot,
+    LotParameter,
+    Purchase,
+    Supplier,
+    SupplierContact,
+)
 from app.search_providers.perplexity import search_suppliers_with_perplexity
 from app.supplier_import import merge_contacts
 from app.task_queue import TaskQueue
@@ -598,23 +609,162 @@ def _build_lot_comparison_rows(session: Session, purchase_id: int, bid_id: int) 
     }
 
 
+def _build_application_lot_comparison_rows(session: Session, purchase_id: int, application_id: int) -> Dict:
+    purchase_lots = session.exec(select(Lot).where(Lot.purchase_id == purchase_id).order_by(Lot.id)).all()
+    application_lots = session.exec(
+        select(ApplicationLot).where(ApplicationLot.application_id == application_id).order_by(ApplicationLot.id)
+    ).all()
+
+    purchase_items = []
+    for lot in purchase_lots:
+        params = session.exec(select(LotParameter).where(LotParameter.lot_id == lot.id).order_by(LotParameter.id)).all()
+        purchase_items.append(
+            {
+                "id": lot.id,
+                "name": lot.name,
+                "parameters": [
+                    {"name": param.name, "value": param.value, "units": param.units}
+                    for param in params
+                ],
+            }
+        )
+
+    application_items = []
+    for lot in application_lots:
+        params = session.exec(
+            select(ApplicationLotParameter)
+            .where(ApplicationLotParameter.application_lot_id == lot.id)
+            .order_by(ApplicationLotParameter.id)
+        ).all()
+        param_rows = [{"name": param.name, "value": param.value, "units": param.units} for param in params]
+        if lot.country_of_origin:
+            param_rows = [{"name": "Страна производства", "value": lot.country_of_origin, "units": ""}] + param_rows
+        application_items.append(
+            {
+                "id": lot.id,
+                "name": lot.name,
+                "price": lot.price,
+                "parameters": param_rows,
+            }
+        )
+
+    if not purchase_items:
+        return {"rows": [], "note": "Лоты ТЗ не найдены"}
+    if not application_items:
+        return {
+            "rows": [
+                {
+                    "lot_id": item["id"],
+                    "lot_name": item["name"],
+                    "lot_parameters": item["parameters"],
+                    "bid_lot_id": None,
+                    "bid_lot_name": None,
+                    "bid_lot_price": None,
+                    "bid_lot_parameters": [],
+                    "confidence": None,
+                    "reason": "Лоты Заявки не найдены",
+                    "characteristic_rows": [
+                        {
+                            "left_text": _param_to_text(param),
+                            "right_text": "",
+                            "status": "unmatched_tz",
+                        }
+                        for param in item["parameters"]
+                    ],
+                }
+                for item in purchase_items
+            ],
+            "note": "Лоты Заявки не найдены",
+        }
+
+    client = _build_openrouter_client()
+    all_texts = [_lot_to_text(item["name"], item["parameters"]) for item in purchase_items] + [
+        _lot_to_text(item["name"], item["parameters"]) for item in application_items
+    ]
+    embeddings_response = client.embeddings.create(
+        model=OPENROUTER_EMBEDDING_MODEL,
+        input=all_texts,
+        encoding_format="float",
+    )
+    indexed_vectors = sorted(embeddings_response.data, key=lambda item: item.index)
+    vectors = [item.embedding for item in indexed_vectors]
+    purchase_vectors = vectors[: len(purchase_items)]
+    application_vectors = vectors[len(purchase_items) :]
+
+    application_by_id = {item["id"]: item for item in application_items}
+    rows = []
+    matched_count = 0
+
+    for idx, purchase_item in enumerate(purchase_items):
+        scored = []
+        for application_idx, application_item in enumerate(application_items):
+            similarity = _cosine_similarity(purchase_vectors[idx], application_vectors[application_idx])
+            scored.append((similarity, application_item["id"]))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        top_candidates_ids = [item[1] for item in scored[:3]]
+        top_candidates = [application_by_id[candidate_id] for candidate_id in top_candidates_ids]
+
+        matched_id, confidence, reason = _classify_match(client, purchase_item, top_candidates)
+        if confidence < LOT_MATCH_MIN_CONFIDENCE:
+            matched_id = None
+        matched_item = application_by_id.get(matched_id) if matched_id is not None else None
+        if matched_item:
+            matched_count += 1
+
+        rows.append(
+            {
+                "lot_id": purchase_item["id"],
+                "lot_name": purchase_item["name"],
+                "lot_parameters": purchase_item["parameters"],
+                "bid_lot_id": matched_item["id"] if matched_item else None,
+                "bid_lot_name": matched_item["name"] if matched_item else None,
+                "bid_lot_price": matched_item.get("price") if matched_item else None,
+                "bid_lot_parameters": matched_item["parameters"] if matched_item else [],
+                "confidence": confidence if matched_item else None,
+                "reason": reason or None,
+                "characteristic_rows": (
+                    _build_characteristic_rows(client, purchase_item["parameters"], matched_item["parameters"])
+                    if matched_item
+                    else [
+                        {
+                            "left_text": _param_to_text(param),
+                            "right_text": "",
+                            "status": "unmatched_tz",
+                        }
+                        for param in purchase_item["parameters"]
+                    ]
+                ),
+            }
+        )
+
+    return {
+        "rows": rows,
+        "note": f"Сопоставлено лотов: {matched_count} из {len(purchase_items)}",
+    }
+
+
 def _process_lot_comparison_task(task: LLMTask) -> None:
     payload = TaskQueue._load_payload(task.input_text)
     try:
         purchase_id = int(payload.get("purchase_id") or task.purchase_id or 0)
         bid_id = int(payload.get("bid_id") or task.bid_id or 0)
+        application_id = int(payload.get("application_id") or 0)
     except (TypeError, ValueError):
         purchase_id = 0
         bid_id = 0
-    if not purchase_id or not bid_id:
-        raise RuntimeError("lot_comparison task requires purchase_id and bid_id")
+        application_id = 0
+    if not purchase_id or (not bid_id and not application_id):
+        raise RuntimeError("lot_comparison task requires purchase_id and bid_id/application_id")
 
     with Session(engine) as session:
         task_in_db = session.get(LLMTask, task.id)
         if not task_in_db:
             return
 
-        result = _build_lot_comparison_rows(session, purchase_id, bid_id)
+        if bid_id:
+            result = _build_lot_comparison_rows(session, purchase_id, bid_id)
+        else:
+            result = _build_application_lot_comparison_rows(session, purchase_id, application_id)
         task_in_db.output_text = json.dumps(result, ensure_ascii=False)
         task_in_db.status = "completed"
         session.add(task_in_db)
@@ -622,7 +772,7 @@ def _process_lot_comparison_task(task: LLMTask) -> None:
 
 
 def _process_task(task: LLMTask) -> None:
-    if task.task_type == "lot_comparison":
+    if task.task_type in ("lot_comparison", "application_lot_comparison"):
         _process_lot_comparison_task(task)
         return
 
@@ -672,6 +822,8 @@ def run_worker() -> None:
     )
     if not task_types:
         raise RuntimeError("WORKER_TASK_TYPES is empty")
+    if "lot_comparison" in task_types and "application_lot_comparison" not in task_types:
+        task_types.append("application_lot_comparison")
 
     metrics_port_raw = (os.getenv("METRICS_PORT") or "9100").strip()
     metrics_port = int(metrics_port_raw) if metrics_port_raw else 9100

@@ -252,7 +252,7 @@ def _delete_application_related(session, purchase_id: int, application_id: int) 
     session.exec(
         sa_delete(LLMTask).where(
             LLMTask.purchase_id == purchase_id,
-            LLMTask.task_type.in_(["application_lot_comparison", "application_lots_extraction"]),
+            LLMTask.task_type.in_(["lot_comparison", "application_lots_extraction"]),
             LLMTask.input_text.like(f'%\"application_id\": {application_id}%'),
         )
     )
@@ -297,7 +297,7 @@ def _delete_purchase_related(session, purchase_id: int) -> None:
         session.exec(
             sa_delete(LLMTask).where(
                 LLMTask.purchase_id == purchase_id,
-                LLMTask.task_type.in_(["application_lot_comparison", "application_lots_extraction"]),
+                LLMTask.task_type.in_(["lot_comparison", "application_lots_extraction"]),
             )
         )
         session.exec(sa_delete(Application).where(Application.id.in_(application_ids)))
@@ -906,7 +906,7 @@ def start_application_lot_comparison(
         select(LLMTask)
         .where(
             LLMTask.purchase_id == purchase_id,
-            LLMTask.task_type == "application_lot_comparison",
+            LLMTask.task_type == "lot_comparison",
             LLMTask.input_text.like(f'%\"application_id\": {application_id}%'),
             LLMTask.status.in_(["queued", "in_progress"]),
         )
@@ -917,7 +917,7 @@ def start_application_lot_comparison(
 
     task = LLMTask(
         purchase_id=purchase_id,
-        task_type="application_lot_comparison",
+        task_type="lot_comparison",
         input_text=json.dumps(
             {
                 "purchase_id": purchase_id,
@@ -955,7 +955,7 @@ def get_application_lot_comparison(
         select(LLMTask)
         .where(
             LLMTask.purchase_id == purchase_id,
-            LLMTask.task_type == "application_lot_comparison",
+            LLMTask.task_type == "lot_comparison",
             LLMTask.input_text.like(f'%\"application_id\": {application_id}%'),
         )
         .order_by(LLMTask.created_at.desc())

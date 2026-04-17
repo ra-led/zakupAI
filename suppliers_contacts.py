@@ -14,6 +14,11 @@ import html2text
 from tqdm import tqdm
 
 from openai import OpenAI
+try:
+    from app.llm_metrics import record_llm_usage
+except Exception:  # noqa: BLE001
+    def record_llm_usage(response, provider, model, operation):  # type: ignore[no-redef]
+        _ = (response, provider, model, operation)
 
 
 
@@ -64,6 +69,20 @@ def shutdown_driver() -> None:
 
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=os.environ.get("OPENAI_BASE_URL"))
+
+
+def _chat_completion_with_metrics(**kwargs):
+    response = client.chat.completions.create(**kwargs)
+    try:
+        record_llm_usage(
+            response,
+            provider="openai",
+            model=str(kwargs.get("model") or ""),
+            operation="supplier_search_contacts",
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[metrics] failed to record supplier-search usage: {exc}")
+    return response
 
 
 SUMMARY_INSTRUCTIONS = """Твоя задача — преобразовать техническое задание с длинным перечнем однотипных товаров
@@ -209,7 +228,7 @@ def summarize_tz_for_single_supplier(tz_text: str) -> Dict[str, Any]:
 
     prompt = f"{SUMMARY_INSTRUCTIONS}\n\nИсходное техническое задание:\n{tz_text}"
 
-    response = client.chat.completions.create(
+    response = _chat_completion_with_metrics(
         model=os.environ["OPENAI_MODEL"],
         messages=[
             {
@@ -291,7 +310,7 @@ def transform_answer_to_json(task: str, received_answer: str) -> Dict[str, Any]:
     """
     prompt = FIX_JSON_INSTRUCTIONS(task=task, received_answer=received_answer)
     try:
-        response = client.chat.completions.create(
+        response = _chat_completion_with_metrics(
             model=os.environ["OPENAI_MODEL"],
             messages=[
                 {"role": "system", "content": "You are a JSON transformation specialist."},
@@ -773,7 +792,7 @@ def doc_validation(technical_spec: str, doc) -> Tuple[bool, str]:
     """
     task = DOC_VAL_INSTRUCTIONS.format(technical_spec=technical_spec, **doc)
     try:
-        response = client.chat.completions.create(
+        response = _chat_completion_with_metrics(
             model=os.environ["OPENAI_MODEL"],
             messages=[
                 {
@@ -842,7 +861,7 @@ def company_validation(
 
     task = COMPANY_VAL_INSTRUCTIONS.format(tz=tz, site_text_block=site_text_block)
     try:
-        response = client.chat.completions.create(
+        response = _chat_completion_with_metrics(
             model=os.environ["OPENAI_MODEL"],
             messages=[
                 {

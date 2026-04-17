@@ -192,7 +192,9 @@ services:
       - prometheus_data:/prometheus
 
   grafana:
-    image: grafana/grafana:11.1.0
+    build:
+      context: .
+      dockerfile: monitoring/grafana/Dockerfile
     restart: unless-stopped
     depends_on:
       - prometheus
@@ -203,9 +205,6 @@ services:
       - "3000"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
 
 volumes:
   db_data:

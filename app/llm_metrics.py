@@ -1,7 +1,7 @@
 import os
 from typing import Any
 
-from prometheus_client import Counter
+from prometheus_client import Counter, Gauge
 
 
 METRICS_SERVICE_NAME = os.getenv("METRICS_SERVICE_NAME", "backend")
@@ -26,6 +26,24 @@ LLM_TOKENS_REASONING_TOTAL = Counter(
     "Total number of reasoning tokens used by LLM calls.",
     ["service", "provider", "model", "operation"],
 )
+LLM_METRICS_READY = Gauge(
+    "llm_metrics_ready",
+    "Whether LLM metrics instrumentation is initialized.",
+    ["service"],
+)
+
+_DEFAULT_LABELS = {
+    "service": METRICS_SERVICE_NAME,
+    "provider": "unknown",
+    "model": "unknown",
+    "operation": "unknown",
+}
+
+LLM_REQUESTS_TOTAL.labels(**_DEFAULT_LABELS).inc(0)
+LLM_TOKENS_INPUT_TOTAL.labels(**_DEFAULT_LABELS).inc(0)
+LLM_TOKENS_OUTPUT_TOTAL.labels(**_DEFAULT_LABELS).inc(0)
+LLM_TOKENS_REASONING_TOTAL.labels(**_DEFAULT_LABELS).inc(0)
+LLM_METRICS_READY.labels(service=METRICS_SERVICE_NAME).set(1)
 
 
 def _to_int(value: Any) -> int:

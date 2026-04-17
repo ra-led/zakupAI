@@ -11,7 +11,7 @@ from openai import OpenAI
 from sqlmodel import Session, select
 
 from app.database import create_db_and_tables, engine
-from app.models import BidLot, BidLotParameter, LLMTask, Lot, LotParameter, Purchase, Supplier, SupplierContact
+from app.models import BidLot, BidLotParameter, LLMTask, Lot, LotParameter, Purchase, SiteCrawlMetric, Supplier, SupplierContact
 from app.search_providers.perplexity import search_suppliers_with_perplexity
 from app.supplier_import import merge_contacts
 from app.task_queue import TaskQueue
@@ -124,6 +124,7 @@ def _collect_combined_contacts(
     task_type: str,
     progress_cb: ProgressCallback = None,
     usage_ctx: Optional[Dict] = None,
+    metrics_cb: Optional[Callable[[Dict], None]] = None,
 ) -> Dict:
     """Run the supplier-discovery pipeline.
 
@@ -257,6 +258,7 @@ def _collect_combined_contacts(
             websites=websites_to_crawl,
             tz_summary=yandex_result.get("tz_summary"),
             progress_cb=_crawl_progress,
+            metrics_cb=metrics_cb,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Website crawl failed")
@@ -963,16 +965,43 @@ def _process_task(task: LLMTask) -> None:
 
     logger.info("Starting supplier search task %s", task.id)
     task_id = task.id  # capture for closure
+    purchase_id = task.purchase_id
     # Установим контекст для всех LLM/Yandex вызовов внутри пайплайна,
     # чтобы record_usage автоматически связывал записи с этой задачей.
     usage_ctx = {"purchase_id": task.purchase_id, "task_id": task.id}
     set_usage_context(usage_ctx)
+
+    def _write_site_metric(metric: Dict) -> None:
+        try:
+            with Session(engine) as session:
+                row = SiteCrawlMetric(
+                    task_id=task_id,
+                    purchase_id=purchase_id,
+                    url=metric.get("url") or "",
+                    domain=metric.get("domain"),
+                    http_status=metric.get("http_status"),
+                    http_text_len=metric.get("http_text_len"),
+                    http_emails_count=metric.get("http_emails_count") or 0,
+                    http_duration_ms=metric.get("http_duration_ms"),
+                    http_error=metric.get("http_error"),
+                    render_type=metric.get("render_type"),
+                    selenium_duration_ms=metric.get("selenium_duration_ms"),
+                    selenium_emails_count=metric.get("selenium_emails_count") or 0,
+                    is_relevant=metric.get("is_relevant"),
+                    total_duration_ms=metric.get("total_duration_ms"),
+                )
+                session.add(row)
+                session.commit()
+        except Exception:
+            logger.exception("failed to persist SiteCrawlMetric")
+
     try:
         result = _collect_combined_contacts(
             terms_text,
             task.task_type,
             progress_cb=lambda partial: _write_progress(task_id, partial),
             usage_ctx=usage_ctx,
+            metrics_cb=_write_site_metric,
         )
     finally:
         set_usage_context(None)

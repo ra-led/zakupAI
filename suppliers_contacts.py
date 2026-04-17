@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from io import BytesIO
 from time import sleep
 from typing import Callable, Tuple, List, Dict, Any, Optional
@@ -1017,11 +1018,71 @@ def collect_yandex_search_output_from_text(
     }
 
 
+_HTTP_PROBE_UA = "Mozilla/5.0 (compatible; zakupAI-crawler/1.0)"
+
+
+def _http_probe(url: str, timeout: float = 15.0) -> Dict[str, Any]:
+    """HTTP-only fetch used purely for telemetry.
+
+    Does NOT affect crawler behavior — the Selenium path still runs afterwards.
+    The point is to compare what a plain fetch sees vs. what Selenium sees,
+    so we can later decide whether an HTTP-first optimization is safe.
+    """
+    t0 = time.time()
+    full_url = url if "://" in (url or "") else f"http://{url}"
+    try:
+        resp = requests.get(
+            full_url,
+            timeout=timeout,
+            headers={"User-Agent": _HTTP_PROBE_UA},
+            allow_redirects=True,
+        )
+        body = resp.text or ""
+        try:
+            text = html2text.html2text(body).strip()
+        except Exception:
+            text = body.strip()
+        emails = set(re.findall(r"[\w.+-]+@[\w-]+\.[\w.-]+", body))
+        if resp.status_code >= 400:
+            render_type = "http_error"
+        elif len(text) < 500:
+            render_type = "http_thin"
+        else:
+            render_type = "http_ok"
+        return {
+            "http_status": resp.status_code,
+            "http_text_len": len(text),
+            "http_emails_count": len(emails),
+            "http_duration_ms": int((time.time() - t0) * 1000),
+            "http_error": None,
+            "render_type": render_type,
+        }
+    except requests.Timeout:
+        return {
+            "http_status": None,
+            "http_text_len": None,
+            "http_emails_count": 0,
+            "http_duration_ms": int((time.time() - t0) * 1000),
+            "http_error": "timeout",
+            "render_type": "http_timeout",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "http_status": None,
+            "http_text_len": None,
+            "http_emails_count": 0,
+            "http_duration_ms": int((time.time() - t0) * 1000),
+            "http_error": str(exc)[:200],
+            "render_type": "http_error",
+        }
+
+
 def collect_contacts_from_websites(
     technical_task_text: str,
     websites: List[Dict[str, Any]],
     tz_summary: Optional[Dict[str, Any]] = None,
     progress_cb: Optional[Callable[[int, int, str], None]] = None,
+    metrics_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     """
     Stage 2: crawl websites and collect emails/validation.
@@ -1029,6 +1090,9 @@ def collect_contacts_from_websites(
     progress_cb is called after each site with (processed_count, total, current_website).
     Used by the ETL worker to surface "Краулинг сайтов: 12/47" in the LLMTask note
     so the frontend can show real progress instead of a single 15-minute spinner.
+
+    metrics_cb (optional) receives a per-site telemetry dict. When provided,
+    an extra HTTP probe runs before the Selenium path to compare coverage.
     """
     summary = tz_summary or summarize_tz_for_single_supplier(technical_task_text)
     tz_for_validation = build_validation_tz(summary)
@@ -1055,6 +1119,12 @@ def collect_contacts_from_websites(
                     pass
             continue
 
+        site_t0 = time.time()
+        probe_result: Dict[str, Any] = {}
+        if metrics_cb is not None:
+            probe_result = _http_probe(website)
+
+        selenium_t0 = time.time()
         main_page_content = ""
         about_page_content = None
         catalog_page_content = None
@@ -1161,6 +1231,25 @@ def collect_contacts_from_websites(
             }
         )
         seen.add(website)
+
+        if metrics_cb is not None:
+            try:
+                domain = urlparse(website if "://" in website else "http://" + website).netloc or website
+            except Exception:
+                domain = website
+            metric = {
+                "url": website,
+                "domain": domain[:200] if domain else None,
+                "selenium_duration_ms": int((time.time() - selenium_t0) * 1000),
+                "selenium_emails_count": len(emails or []),
+                "is_relevant": bool(validation_result.get("is_relevant", False)),
+                "total_duration_ms": int((time.time() - site_t0) * 1000),
+                **probe_result,
+            }
+            try:
+                metrics_cb(metric)
+            except Exception:
+                pass
 
         if progress_cb:
             try:

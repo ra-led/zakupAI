@@ -140,6 +140,36 @@ class LLMTrace(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class SiteCrawlMetric(SQLModel, table=True):
+    """Per-site telemetry captured during supplier search crawl.
+
+    The goal is to decide whether an HTTP-first path (skip Selenium when
+    the plain fetch already yields meaningful text) would be safe. Each
+    row carries both the HTTP probe result and the actual Selenium-path
+    duration, so we can compare coverage and speed after the fact.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    task_id: Optional[int] = Field(default=None, foreign_key="llmtask.id", index=True)
+    purchase_id: Optional[int] = Field(default=None, foreign_key="purchase.id", index=True)
+    url: str
+    domain: Optional[str] = None
+
+    http_status: Optional[int] = None
+    http_text_len: Optional[int] = None  # chars of meaningful text after html2text
+    http_emails_count: int = 0
+    http_duration_ms: Optional[int] = None
+    http_error: Optional[str] = None
+    # http_ok | http_thin | http_error | http_timeout | selenium_skipped
+    render_type: Optional[str] = None
+
+    selenium_duration_ms: Optional[int] = None
+    selenium_emails_count: int = 0
+
+    is_relevant: Optional[bool] = None
+    total_duration_ms: Optional[int] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
 class Bid(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     purchase_id: int = Field(foreign_key="purchase.id")

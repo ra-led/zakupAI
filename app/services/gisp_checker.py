@@ -274,9 +274,19 @@ async def _scraper_catalog(client: httpx.AsyncClient, product_id: str) -> Option
         raise _ScraperUnavailable(f"unexpected HTTP {resp.status_code}")
 
     try:
-        return resp.json()
+        payload = resp.json()
     except ValueError as exc:
         raise _ScraperUnavailable(f"non-JSON response: {exc}")
+
+    # Scraper returns 200 even when Selenium crashed mid-scrape (see incident
+    # 2026-04-19, product_id=4053367). The `error` field is the authoritative
+    # signal; treat it as transport failure so the checker surfaces
+    # gisp_unavailable (retryable) instead of falsely claiming the card is empty.
+    err = payload.get("error")
+    if err:
+        attempts = payload.get("attempts", 1)
+        raise _ScraperUnavailable(f"scraper error after {attempts} attempt(s): {err}")
+    return payload
 
 
 # ---------------------------------------------------------------------------

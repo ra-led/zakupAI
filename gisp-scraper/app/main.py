@@ -143,6 +143,11 @@ class CatalogResponse(BaseModel):
     by_tab: Dict[str, Dict[str, str]] = {}
     flat: Dict[str, str] = {}
     warnings: List[str] = []
+    # Set when the underlying Selenium scrape failed (driver crash, page-load
+    # timeout, stale DOM). Callers should treat by_tab as *unreliable* and
+    # prefer to retry rather than show the user "card has no characteristics".
+    error: Optional[str] = None
+    attempts: int = 1
 
 
 # ---------------------------------------------------------------------------
@@ -548,12 +553,37 @@ def _scrape_catalog_sync(product_id: str) -> Dict[str, Any]:
                 pass
 
 
+CATALOG_RETRY_ATTEMPTS = int(os.getenv("GISP_CATALOG_RETRY_ATTEMPTS", "2"))
+
+
 async def _scrape_catalog(product_id: str) -> Dict[str, Any]:
-    """Throttled async wrapper around the blocking scraper."""
+    """Throttled async wrapper around the blocking scraper.
+
+    Retries once when Selenium crashes (``invalid session id`` / render
+    disconnects) — these are transient, cost us only the latency of one extra
+    page load, and turn a silent 200+empty response into a recovered success
+    most of the time. See incident 2026-04-19 with product_id=4053367 for the
+    motivation.
+    """
     assert _browser_semaphore is not None, "lifespan must initialize the semaphore"
-    async with _browser_semaphore:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _scrape_catalog_sync, product_id)
+    loop = asyncio.get_running_loop()
+    last_result: Dict[str, Any] = {}
+    for attempt in range(1, CATALOG_RETRY_ATTEMPTS + 1):
+        async with _browser_semaphore:
+            result = await loop.run_in_executor(None, _scrape_catalog_sync, product_id)
+        result["attempts"] = attempt
+        # A scrape is "good" if Selenium didn't explode AND we got at least
+        # one tab with data. Anything else is retried.
+        if not result.get("error") and result.get("by_tab"):
+            return result
+        last_result = result
+        if attempt < CATALOG_RETRY_ATTEMPTS:
+            logger.warning(
+                "Retrying catalog scrape product_id=%s (attempt %d/%d, reason=%s)",
+                product_id, attempt, CATALOG_RETRY_ATTEMPTS,
+                result.get("error") or "empty_by_tab",
+            )
+    return last_result
 
 
 # ---------------------------------------------------------------------------
@@ -643,6 +673,8 @@ async def fetch_catalog(product_id: str) -> CatalogResponse:
         by_tab=result.get("by_tab", {}),
         flat=result.get("flat", {}),
         warnings=result.get("warnings", []),
+        error=result.get("error"),
+        attempts=int(result.get("attempts", 1)),
     )
 
 

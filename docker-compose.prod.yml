@@ -62,20 +62,20 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      GISP_MAX_CONCURRENT: ${GISP_MAX_CONCURRENT:-3}
+      GISP_MAX_CONCURRENT: ${GISP_MAX_CONCURRENT:-5}
       PP719_HTTP_TIMEOUT: ${PP719_HTTP_TIMEOUT:-30}
       CATALOG_PAGE_TIMEOUT: ${CATALOG_PAGE_TIMEOUT:-30}
       LOG_LEVEL: ${GISP_SCRAPER_LOG_LEVEL:-INFO}
     expose:
       - "8000"
     # Selenium spawns helper processes; the default 64 MB shm causes Chromium crashes.
-    shm_size: "1gb"
+    shm_size: "2gb"
     deploy:
       resources:
         limits:
-          memory: 1g
+          memory: 2g
         reservations:
-          memory: 256m
+          memory: 512m
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request, sys; sys.exit(0) if urllib.request.urlopen(\"http://localhost:8000/health\", timeout=3).status == 200 else sys.exit(1)'"]
       interval: 30s
@@ -112,6 +112,12 @@ services:
       WORKER_TASK_TYPES: supplier_search,supplier_search_perplexity
     expose:
       - "8002"
+    deploy:
+      resources:
+        limits:
+          memory: 600m
+        reservations:
+          memory: 200m
 
   etl-compare:
     build:
@@ -136,6 +142,12 @@ services:
       WORKER_TASK_TYPES: lot_comparison
     expose:
       - "8002"
+    deploy:
+      resources:
+        limits:
+          memory: 400m
+        reservations:
+          memory: 150m
 
   frontend:
     build:

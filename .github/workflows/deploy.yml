@@ -121,7 +121,14 @@ jobs:
             # container instead of relying on image-digest comparison
             # (which has bitten us — see incident 2026-04-11).
             docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps frontend
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans backend etl-suppliers etl-compare doc-to-md db gisp-scraper
+            # etl workers scale horizontally: etl/worker.py uses SELECT FOR UPDATE SKIP LOCKED
+            # so multiple replicas can safely claim from the same postgres queue.
+            ETL_SUPPLIERS_REPLICAS="${ETL_SUPPLIERS_REPLICAS:-3}"
+            ETL_COMPARE_REPLICAS="${ETL_COMPARE_REPLICAS:-2}"
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans \
+              --scale etl-suppliers="${ETL_SUPPLIERS_REPLICAS}" \
+              --scale etl-compare="${ETL_COMPARE_REPLICAS}" \
+              backend etl-suppliers etl-compare doc-to-md db gisp-scraper
             docker compose -f docker-compose.prod.yml restart nginx
 
             echo "=== local sanity (build.txt inside container) ==="

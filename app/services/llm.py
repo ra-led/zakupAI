@@ -47,7 +47,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from openai import OpenAI
+from openai import APIConnectionError, OpenAI
 
 from ..usage_tracking import record_usage, save_trace
 
@@ -72,6 +72,24 @@ _DEFAULT_TIMEOUT = 180.0
 
 # When True, full request/response is saved to LLMTrace table for debugging.
 _TRACE_ENABLED = os.getenv("LLM_TRACE_ENABLED", "false").lower() == "true"
+
+# Transient-failure retry policy. Triggered on 429 (rate limit), 5xx gateway
+# errors, and raw connection drops. Under 10 concurrent supplier_search
+# pipelines a naive client would lose half the requests to bursts; the
+# backoff lets OpenRouter/Perplexity/etc. drain their queue before we retry.
+_RETRY_MAX_ATTEMPTS = int(os.getenv("LLM_RETRY_MAX_ATTEMPTS", "3"))
+_RETRY_BASE_DELAY = float(os.getenv("LLM_RETRY_BASE_DELAY_S", "1.0"))
+_RETRYABLE_STATUS = {408, 409, 429, 500, 502, 503, 504}
+
+
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, APIConnectionError):
+        return True
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None) if response is not None else None
+    return status_code in _RETRYABLE_STATUS
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +205,28 @@ def _channel_for(cfg: LLMConfig) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Retry wrapper — handles 429/5xx/connection drops with exponential backoff
+# ---------------------------------------------------------------------------
+
+
+def _call_with_retry(client: OpenAI, request_kwargs: Dict[str, Any], *, task: str) -> Any:
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return client.chat.completions.create(**request_kwargs)
+        except Exception as exc:  # noqa: BLE001
+            if attempt >= _RETRY_MAX_ATTEMPTS or not _is_retryable(exc):
+                raise
+            delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+            logger.warning(
+                "[llm:%s] retryable error (attempt %d/%d), sleeping %.1fs: %s",
+                task, attempt, _RETRY_MAX_ATTEMPTS, delay, exc,
+            )
+            time.sleep(delay)
+
+
+# ---------------------------------------------------------------------------
 # Sync chat-completion entrypoint
 # ---------------------------------------------------------------------------
 
@@ -231,7 +271,7 @@ def chat_completion(
     channel = _channel_for(cfg)
     t0 = time.monotonic()
     try:
-        response = client.chat.completions.create(**request_kwargs)
+        response = _call_with_retry(client, request_kwargs, task=task)
     except Exception as exc:  # noqa: BLE001
         duration_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("[llm:%s] request failed: %s", task, exc)

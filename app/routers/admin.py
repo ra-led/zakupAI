@@ -73,6 +73,47 @@ def get_dashboard(
     )
 
 
+@router.get("/queue")
+def queue_depth(
+    _admin: User = Depends(get_admin_user),
+    session=Depends(get_session),
+):
+    # Сигнализирует о перегрузке воркеров: сколько задач по типам висит в queued
+    # и как долго самая старая ждёт. Источник для алертинга (cron → Telegram/email).
+    now = datetime.utcnow()
+    rows = session.exec(
+        select(
+            LLMTask.task_type,
+            LLMTask.status,
+            func.count(LLMTask.id).label("count"),
+            func.min(LLMTask.created_at).label("oldest_created_at"),
+        )
+        .where(col(LLMTask.status).in_(["queued", "in_progress"]))
+        .group_by(LLMTask.task_type, LLMTask.status)
+    ).all()
+
+    buckets: dict = {}
+    alerts: list = []
+    total_active = 0
+    for r in rows:
+        key = f"{r.task_type}.{r.status}"
+        oldest_age = int((now - r.oldest_created_at).total_seconds()) if r.oldest_created_at else 0
+        count = int(r.count)
+        buckets[key] = {"count": count, "oldest_age_seconds": oldest_age}
+        total_active += count
+        if r.status == "queued" and count > 10:
+            alerts.append(f"{r.task_type}: {count} queued")
+        if r.status == "queued" and oldest_age > 600:
+            alerts.append(f"{r.task_type}: oldest queued {oldest_age // 60}m old")
+
+    return {
+        "timestamp": now.isoformat(),
+        "buckets": buckets,
+        "alerts": alerts,
+        "total_active": total_active,
+    }
+
+
 @router.get("/users", response_model=List[AdminUserRead])
 def list_users(
     q: Optional[str] = Query(default=None),

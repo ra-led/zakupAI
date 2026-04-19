@@ -2637,7 +2637,11 @@
         html += '<td>' + escapeHtml(row.supplier_value || '—') + '</td>';
         html += '<td>' + escapeHtml(row.gisp_value != null ? row.gisp_value : '—') + '</td>';
         html += '<td class="gisp-status-cell">' + statusLabel;
-        if (row.comment) html += '<div class="gisp-comment">' + escapeHtml(row.comment) + '</div>';
+        // Comment is redundant for missing_in_gisp — the label already says
+        // "Нет в ГИСП" and the LLM/fallback text just repeats that.
+        if (row.comment && row.status !== 'missing_in_gisp') {
+          html += '<div class="gisp-comment">' + escapeHtml(row.comment) + '</div>';
+        }
         html += '</td></tr>';
       }
       html += '</tbody></table></div>';

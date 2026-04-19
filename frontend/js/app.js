@@ -1617,7 +1617,6 @@
     if (allDone) {
       _stopComparisonTimer();
       $('btn-compare').disabled = false;
-      setTimeout(function () { $('comparison-progress').innerHTML = ''; }, 3000);
       _renderComparisonAllResults();
     } else {
       comparisonPollingTimer = setTimeout(pollComparisonAll, 1500);
@@ -2372,6 +2371,7 @@
 
   function renderRegimeResults(data, progress) {
     stopRegimeTimer();
+    var clientElapsed = regimeStartTime ? formatElapsed(Date.now() - regimeStartTime) : null;
     regimeStartTime = null;
     if (!data || !data.items || data.items.length === 0) {
       $('regime-results').innerHTML = '<div class="empty-state">Нет результатов проверки</div>';
@@ -2407,8 +2407,9 @@
     html += '<div style="color:' + summaryColor + ';font-size:18px">&#10003;</div>';
     html += '<div><strong style="color:' + summaryColor + '">Проверка завершена</strong>';
     html += '<span style="margin-left:12px;font-size:13px;color:var(--text-secondary)">' + data.items.length + ' товаров</span></div>';
-    if (progress && progress.timings && progress.timings.total) {
-      html += '<div style="margin-left:auto;font-size:13px;color:var(--text-secondary)">' + progress.timings.total + 'с</div>';
+    var timingText = (progress && progress.timings && progress.timings.total) ? (progress.timings.total + 'с') : clientElapsed;
+    if (timingText) {
+      html += '<div style="margin-left:auto;font-size:13px;color:var(--text-secondary);font-variant-numeric:tabular-nums">' + timingText + '</div>';
     }
     html += '</div>';
     // Counts row

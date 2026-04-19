@@ -3,7 +3,14 @@ from typing import List, Optional
 
 import json
 import logging
+import os
 import traceback
+
+SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "qwadro@mail.ru").strip().lower()
+
+
+def _is_superadmin(user: "User") -> bool:
+    return bool(user and user.email and user.email.strip().lower() == SUPERADMIN_EMAIL)
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
@@ -28,6 +35,7 @@ from ..models import (
     PurchaseFile,
     RegimeCheck,
     RegimeCheckItem,
+    SessionToken,
     Supplier,
     User,
 )
@@ -120,6 +128,11 @@ def toggle_admin(
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if _is_superadmin(user) and not _is_superadmin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Суперадмин защищён от изменений другими администраторами",
+        )
     user.is_admin = payload.is_admin
     session.add(user)
     session.commit()
@@ -146,6 +159,11 @@ def toggle_active(
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if _is_superadmin(user) and not _is_superadmin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Суперадмин защищён от изменений другими администраторами",
+        )
 
     was_inactive = not user.is_active
     user.is_active = payload.is_active
@@ -161,6 +179,57 @@ def toggle_active(
         ).start()
 
     return {"ok": True, "is_active": user.is_active}
+
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    admin: User = Depends(get_admin_user),
+    session=Depends(get_session),
+):
+    """Анонимизация аккаунта (soft-delete под 152-ФЗ):
+    email/ФИО/организация затираются, пароль делается невалидным,
+    активные сессии сбрасываются. Закупки и LLM-usage сохраняются для биллинга."""
+    if admin.id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя удалить собственный аккаунт",
+        )
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    if _is_superadmin(user) and not _is_superadmin(admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Суперадмин защищён от удаления другими администраторами",
+        )
+
+    anonymized_marker = f"deleted+{user.id}@anonymized.local"
+    if user.email == anonymized_marker:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Аккаунт уже удалён",
+        )
+
+    original_email = user.email
+    user.email = anonymized_marker
+    user.full_name = "Удалён"
+    user.organization = None
+    user.is_active = False
+    user.is_admin = False
+    user.password_hash = "!DELETED!"
+    session.add(user)
+
+    tokens = session.exec(select(SessionToken).where(SessionToken.user_id == user.id)).all()
+    for t in tokens:
+        session.delete(t)
+
+    session.commit()
+    logger.info(
+        "admin_user_deleted admin_id=%s user_id=%s original_email=%s sessions_revoked=%s",
+        admin.id, user.id, original_email, len(tokens),
+    )
+    return {"ok": True, "anonymized": True, "sessions_revoked": len(tokens)}
 
 
 @router.get("/leads", response_model=List[LeadRead])

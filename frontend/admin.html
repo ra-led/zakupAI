@@ -388,6 +388,11 @@
           return '<span class="admin-badge admin-badge-blocked">Заблокирован</span>';
         }
 
+        var SUPERADMIN_EMAIL = 'qwadro@mail.ru';
+        function isSuperadminEmail(email) {
+          return typeof email === 'string' && email.trim().toLowerCase() === SUPERADMIN_EMAIL;
+        }
+
         function purchaseStatusBadge(status) {
           var map = {
             draft: { cls: 'admin-badge-draft', label: 'Черновик' },
@@ -508,15 +513,29 @@
               users = users.items || users.data || [];
             }
             var currentUser = Auth.getUser();
+            var currentIsSuper = currentUser && isSuperadminEmail(currentUser.email);
             tbody.innerHTML = users.map(function (u) {
               var isSelf = currentUser && currentUser.id === u.id;
-              var adminBtn = isSelf
-                ? '<span class="admin-badge admin-badge-active">Админ (вы)</span>'
-                : (u.is_admin
+              var isDeleted = typeof u.email === 'string' && u.email.indexOf('deleted+') === 0 && u.email.indexOf('@anonymized.local') !== -1;
+              var isTargetSuper = isSuperadminEmail(u.email);
+              var protectedFromCurrent = isTargetSuper && !currentIsSuper;
+              var superBadge = isTargetSuper ? ' <span class="admin-badge admin-badge-completed" title="Суперадмин — защищён от изменений другими администраторами">Суперадмин</span>' : '';
+              var adminBtn;
+              if (isSelf) {
+                adminBtn = '<span class="admin-badge admin-badge-active">Админ (вы)</span>';
+              } else if (protectedFromCurrent) {
+                adminBtn = '';
+              } else {
+                adminBtn = u.is_admin
                   ? '<button class="btn btn-sm btn-outline btn-toggle-admin" data-uid="' + u.id + '" data-admin="true" style="font-size:12px;">Убрать админа</button>'
-                  : '<button class="btn btn-sm btn-outline btn-toggle-admin" data-uid="' + u.id + '" data-admin="false" style="font-size:12px;">Сделать админом</button>');
+                  : '<button class="btn btn-sm btn-outline btn-toggle-admin" data-uid="' + u.id + '" data-admin="false" style="font-size:12px;">Сделать админом</button>';
+              }
               var purchases = (u.purchase_count != null ? u.purchase_count : (u.purchases_count != null ? u.purchases_count : '—'));
               var lastLogin = u.last_login_at ? formatDate(u.last_login_at) : '—';
+              var detailBtn = '<button class="btn btn-sm btn-outline btn-open-detail" data-uid="' + u.id + '" style="font-size:12px;">Открыть</button>';
+              var deleteBtn = (isSelf || isDeleted || protectedFromCurrent)
+                ? ''
+                : ' <button class="btn btn-sm btn-outline btn-delete-user" data-uid="' + u.id + '" data-email="' + escapeHtml(u.email) + '" style="font-size:12px;color:var(--danger);border-color:var(--danger);">Удалить</button>';
               return '<tr>'
                 + '<td>' + escapeHtml(u.email) + '</td>'
                 + '<td>' + escapeHtml(u.full_name || '—') + '</td>'
@@ -525,8 +544,8 @@
                 + '<td>' + formatDate(u.created_at) + '</td>'
                 + '<td>' + lastLogin + '</td>'
                 + '<td>' + statusBadge(u.is_active !== false) + '</td>'
-                + '<td>' + (u.is_admin ? '<span class="admin-badge admin-badge-completed">Админ</span>' : '<span class="admin-badge admin-badge-draft">Пользователь</span>') + ' ' + adminBtn + '</td>'
-                + '<td><button class="btn btn-sm btn-outline btn-open-detail" data-uid="' + u.id + '" style="font-size:12px;">Открыть</button></td>'
+                + '<td>' + (u.is_admin ? '<span class="admin-badge admin-badge-completed">Админ</span>' : '<span class="admin-badge admin-badge-draft">Пользователь</span>') + superBadge + ' ' + adminBtn + '</td>'
+                + '<td>' + detailBtn + deleteBtn + '</td>'
                 + '</tr>';
             }).join('');
 
@@ -534,6 +553,29 @@
             tbody.querySelectorAll('.btn-open-detail').forEach(function (btn) {
               btn.addEventListener('click', function () {
                 showUserDetail(this.getAttribute('data-uid'));
+              });
+            });
+
+            // Bind delete buttons
+            tbody.querySelectorAll('.btn-delete-user').forEach(function (btn) {
+              btn.addEventListener('click', async function () {
+                var uid = this.getAttribute('data-uid');
+                var email = this.getAttribute('data-email');
+                if (!confirm(
+                  'Удалить аккаунт ' + email + '?\n\n' +
+                  'Email, ФИО и организация будут обезличены, активные сессии сброшены, вход станет невозможен.\n' +
+                  'Закупки и статистика LLM сохраняются для биллинга. Действие необратимо.'
+                )) return;
+                this.disabled = true;
+                this.textContent = 'Удаление...';
+                try {
+                  await API.apiFetch('/admin/users/' + uid, { method: 'DELETE' });
+                  await Promise.all([loadDashboard(), loadPendingUsers(), loadUsers(document.getElementById('user-search').value)]);
+                } catch (err) {
+                  alert('Ошибка: ' + (err.message || err));
+                  this.disabled = false;
+                  this.textContent = 'Удалить';
+                }
               });
             });
 
